@@ -1,0 +1,38 @@
+---
+description: Reglas para endpoints FastAPI
+globs: "**/api/**/*.py"
+alwaysApply: false
+---
+
+# Reglas de Endpoints FastAPI
+
+## Estructura de un endpoint
+
+1. Validación de entrada: Pydantic; no duplicar validación manual salvo que la Spec lo exija
+2. Llamada a servicios de `core/`; el endpoint no contiene reglas de negocio
+3. Mapeo de excepciones de dominio a códigos HTTP
+4. Respuesta tipada con `response_model` cuando aplique
+
+## Lo que el endpoint no hace
+
+- No accede directamente a la BD (eso es `db/`)
+- No contiene lógica de negocio (eso es `core/`)
+- No sustituye el logging estructurado del middleware salvo eventos de negocio acordados en Spec
+
+## Response models
+
+- Tipar `response_model` en el decorador cuando la Spec lo defina
+- Opcionales: `field: type | None = None`
+- Timestamps: `datetime` (no `str`), salvo que la Spec imponga otro contrato
+
+## Status codes
+
+- POST que crea recurso: `status_code=201` si la Spec lo indica
+- Recurso no encontrado: 404 vía excepción de dominio o manejador común, no filtrar detalles internos
+- Input inválido: 422 lo cubre Pydantic; no reimplementar salvo contrato distinto en Spec
+- Error interno: 500 con mensaje genérico al cliente; detalles solo en logs
+
+## Health checks
+
+- `/health/live`: el proceso responde; no debe tumbar el proceso por dependencias
+- `/health/ready`: dependencias críticas; si fallan, 503 según Spec
