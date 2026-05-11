@@ -1,4 +1,4 @@
-# Arquitectura: MLOps Portfolio Engine (Zenith-ops)
+# Arquitectura: ZenithOps Portfolio Engine (Zenith-ops)
 
 ## Propósito
 

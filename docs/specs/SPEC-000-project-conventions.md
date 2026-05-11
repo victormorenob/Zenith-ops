@@ -1,7 +1,7 @@
 # SPEC-000: Convenciones de implementación del proyecto
 
-**Estado:** Aprobada  
-**Issue:** N/A (meta-spec)  
+**Estado:** Aprobada
+**Issue:** N/A (meta-spec)
 **Dependencias:** Ninguna
 
 ---
@@ -30,14 +30,14 @@ La organización del paquete Python (`zenith_ops`, etc.) debe seguir la Spec sin
 
 ## Manejo de errores
 
-Todas las excepciones de dominio heredan de `MLOpsException`:
+Todas las excepciones de dominio heredan de `ZenithOpsException`:
 
-- `ModelNotFoundError` → HTTP 404  
-- `ModelNotReadyError` → HTTP 503  
-- `InvalidInputError` → HTTP 422  
-- `InferenceError` → HTTP 500  
+- `ModelNotFoundError` → HTTP 404
+- `ModelNotReadyError` → HTTP 503
+- `InvalidInputError` → HTTP 422
+- `InferenceError` → HTTP 500
 
-Los endpoints (o un exception handler registrado) mapean `MLOpsException` al status correspondiente.  
+Los endpoints (o un exception handler registrado) mapean `ZenithOpsException` al status correspondiente.
 No usar `except Exception`. No devolver stacktraces al cliente.
 
 Cuerpo de error:

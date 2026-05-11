@@ -25,7 +25,7 @@ async def predict(
 ## Jerarquía de errores
 
 ```
-MLOpsException
+ZenithOpsException
 ├── ModelNotFoundError      → 404
 ├── ModelNotReadyError      → 503
 ├── InvalidInputError       → 422

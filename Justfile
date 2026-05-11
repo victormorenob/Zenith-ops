@@ -1,4 +1,4 @@
-# ZenithOps Engine — Task Runner
+# Zenith-Ops — Task Runner
 # Uso: just <comando>  |  just (sin args muestra la lista)
 
 # Lista todos los comandos disponibles
@@ -12,13 +12,13 @@ setup:
     uv run pre-commit install
     uv run pre-commit install --hook-type commit-msg
     cp -n .env.example .env || true
-    @echo "Setup completo. Edita .env con tus valores locales."
+    @echo "✅ Setup completo. Edita .env con tus valores locales."
 
 # ── Desarrollo ────────────────────────────────────────────
 # Levanta el stack completo en local
 start:
     docker compose -f infra/docker/docker-compose.dev.yml up -d
-    @echo "Stack local levantado"
+    @echo "🚀 Stack local levantado"
 
 # Para el stack local
 stop:
@@ -73,8 +73,8 @@ db-reset:
 # ── Docker ────────────────────────────────────────────────
 # Construye la imagen de producción
 build:
-    docker build -f infra/docker/Dockerfile -t mlops-engine:local .
-    docker image ls mlops-engine:local
+    docker build -f infra/docker/Dockerfile -t ZenithOps-engine:local .
+    docker image ls ZenithOps-engine:local
 
 # ── Limpieza ──────────────────────────────────────────────
 # Elimina artefactos de build y caché

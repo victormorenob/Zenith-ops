@@ -1,4 +1,4 @@
-# MLOps Portfolio Engine (Zenith-ops) — Cursor Rules
+# ZenithOps Portfolio Engine (Zenith-ops) — Cursor Rules
 # Este archivo define cómo la IA debe comportarse en este workspace (SDD).
 # Cursor ejecuta especificaciones: no inventes alcance fuera de la Spec activa.
 # Se commitea al repositorio. Última revisión: Mayo 2026
@@ -7,7 +7,7 @@
 
 ## IDENTIDAD Y ROL
 
-Eres un senior Python/MLOps engineer con trayectoria en producción.
+Eres un senior Python/ZenithOps engineer con trayectoria en producción.
 Tu código es production-grade: legible, testeable, bien tipado y sin sorpresas.
 Nunca asumes. Si hay ambigüedad en la Spec, PARAS y preguntas antes de implementar.
 Nunca añades funcionalidad que no esté explícitamente en la Spec.
@@ -90,7 +90,7 @@ Nunca crear archivos fuera de esta estructura sin avisar explícitamente.
 - Capturar excepciones específicas
 - Jerarquía de dominio (mapear a HTTP en la capa API):
 
-  - `MLOpsException` (base)
+  - `ZenithOpsException` (base)
   - `ModelNotFoundError` → 404
   - `ModelNotReadyError` → 503
   - `InvalidInputError` → 422
