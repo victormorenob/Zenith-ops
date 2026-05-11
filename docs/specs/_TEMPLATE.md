@@ -1,8 +1,8 @@
 # SPEC-NNN: [Nombre de la feature]
 
-**Estado:** Borrador | En revisión | Aprobada | Implementada  
-**Issue:** #[número]  
-**ADR relacionado:** ADR-NNN (si aplica)  
+**Estado:** Borrador | En revisión | Aprobada | Implementada
+**Issue:** #[número]
+**ADR relacionado:** ADR-NNN (si aplica)
 **Dependencias:** SPEC-NNN (specs que deben estar implementadas antes)
 
 ---
@@ -33,7 +33,7 @@
 
 ## Contrato de la API (si aplica)
 
-**Método:** GET | POST | PUT | DELETE  
+**Método:** GET | POST | PUT | DELETE
 **Endpoint:** `/v1/[ruta]`
 
 **Request body (ejemplo):**

@@ -1,2 +1,3 @@
 def main() -> None:
-    print("Hello from zenith-ops!")
+    """CLI entrypoint for the `zenith-ops` script; behaviour will follow active specs."""
+    return None
