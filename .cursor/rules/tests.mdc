@@ -1,0 +1,43 @@
+---
+description: Reglas para escribir tests en este proyecto
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# Reglas de Testing
+
+## Estructura obligatoria de cada test
+
+```python
+def test_nombre_descriptivo_del_caso() -> None:
+    # Arrange — prepara el estado inicial
+
+    # Act — ejecuta la acción bajo test
+
+    # Assert — verifica el resultado
+```
+
+## Naming de tests
+
+- Escenarios claros: `test_predict_returns_422_when_model_id_is_empty`
+- Evitar: `test_1`, `test_predict`, `test_endpoint`
+- El nombre responde a: ¿qué pasa cuando…?
+
+## Fixtures
+
+- Fixtures de BD en `tests/conftest.py`
+- Docstring en fixtures que no sean triviales
+- `scope="function"` por defecto; `session` solo para recursos muy costosos
+
+## Mocks
+
+- En unitarios: mockear dependencias externas
+- En integración: no mockear la BD; usar instancia de test real
+- Nombres explícitos: `mock_mlflow_client`, no `mock` ni `m`
+
+## Lo que no hacer en tests
+
+- `assert True` o asserts triviales
+- Testear el framework (FastAPI/SQLAlchemy) en lugar de tu código
+- `pass` o `...` sin implementar
+- `time.sleep()`; usar mocks o fixtures async

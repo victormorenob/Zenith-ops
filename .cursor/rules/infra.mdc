@@ -1,0 +1,29 @@
+---
+description: Reglas para Dockerfiles, compose y GitHub Actions
+globs: ".github/**"
+alwaysApply: false
+---
+
+# Reglas de Infraestructura
+
+Esta regla se adjunta sobre todo a `.github/**`. Aplica la misma filosofía a `Dockerfile*`,
+`docker-compose*.yml` en la raíz o bajo `infra/` cuando los edites.
+
+## Dockerfiles
+
+- Multi-stage: stage de build y stage runtime mínimo
+- Usuario no root en runtime
+- No copiar `.env` a la imagen
+- Imagen final razonablemente pequeña; revisar capas si crece de forma injustificada
+
+## docker-compose
+
+- `healthcheck` en servicios que deban orquestarse por dependencia
+- Volúmenes con nombres explícitos cuando persistan datos
+- Variables desde `.env` o entorno del host, no secretos en claro en el YAML
+
+## GitHub Actions
+
+- Secretos solo vía `${{ secrets.NOMBRE }}` u otros mecanismos de GitHub
+- `timeout-minutes` en jobs largos o con red
+- Deploy u otros pasos críticos dependen de tests / build (`needs:`) según diseño del workflow
