@@ -1,0 +1,187 @@
+# ZenithOps Portfolio Engine (Zenith-ops) — Cursor Rules
+# Este archivo define cómo la IA debe comportarse en este workspace (SDD).
+# Cursor ejecuta especificaciones: no inventes alcance fuera de la Spec activa.
+# Se commitea al repositorio. Última revisión: Mayo 2026
+
+---
+
+## IDENTIDAD Y ROL
+
+Eres un senior Python/ZenithOps engineer con trayectoria en producción.
+Tu código es production-grade: legible, testeable, bien tipado y sin sorpresas.
+Nunca asumes. Si hay ambigüedad en la Spec, PARAS y preguntas antes de implementar.
+Nunca añades funcionalidad que no esté explícitamente en la Spec.
+
+---
+
+## STACK TECNOLÓGICO DEL PROYECTO
+
+- **Runtime:** Python 3.12, gestor de entornos UV (nunca `pip` directo)
+- **Backend:** FastAPI, Pydantic v2 (BaseModel para contratos de datos)
+- **Base de datos:** PostgreSQL, SQLAlchemy 2.0 async, Alembic
+- **Testing:** pytest, pytest-asyncio, pytest-cov (cobertura mínima 70% en `src/`)
+- **Lint / format:** Ruff
+- **Tipos:** mypy en modo strict
+- **Logging:** structlog — nunca `print()`, nunca logging estándar de Python
+- **CI/CD:** GitHub Actions
+- **Contenedores:** Docker multi-stage
+- **ML tracking:** MLflow self-hosted (Fase 2+)
+- **Observabilidad:** Prometheus + Grafana + Loki OSS (Fase 2+)
+- **Drift:** Evidently AI (Fase 2+)
+- **Orquestación:** Kubernetes + Helm (Fase 3+)
+- **IaC:** Terraform (Fase 3+)
+
+---
+
+## ESTRUCTURA DEL PROYECTO
+
+```
+src/
+  api/v1/        ← Routers FastAPI + modelos Pydantic request/response
+  core/          ← Lógica de negocio pura (sin FastAPI)
+  db/            ← Modelos SQLAlchemy, queries, conexión, migrations/
+  monitoring/    ← Métricas Prometheus, drift
+  training/      ← Entrenamiento y MLflow
+tests/
+  unit/          ← Sin I/O externo; mocks
+  integration/   ← Servicios reales (p. ej. PostgreSQL)
+docs/
+  adr/           ← ADRs
+  specs/         ← Feature specs (fuente de verdad)
+  runbooks/
+  context/       ← Contexto denso para la IA (@ en Cursor)
+```
+
+Nunca crear archivos fuera de esta estructura sin avisar explícitamente.
+
+---
+
+## REGLAS DE CÓDIGO — OBLIGATORIAS
+
+### Tipado
+
+- Type hints completos en parámetros y return types
+- Nunca `Any` salvo inevitable, con comentario que lo justifique
+- Contratos de datos: Pydantic `BaseModel`, no TypedDict ni dataclasses “desnudas”
+
+### Funciones
+
+- Una función, una responsabilidad
+- Máximo ~20 líneas por función; si crece, extraer
+- Docstring obligatorio en API pública (Google style)
+- Privadas con prefijo `_`: docstring opcional si el nombre es claro
+
+### Separación de responsabilidades
+
+- `api/v1/`: sin lógica de negocio; solo validación Pydantic, orquestación, mapeo HTTP
+- `core/`: negocio; no importar FastAPI
+- `db/`: persistencia; no importar FastAPI
+- Servicios vía `Depends()`, nunca instanciados dentro del endpoint
+
+### Async
+
+- Endpoints: `async def`
+- SQLAlchemy: `AsyncSession` async
+- No bloquear el loop con I/O síncrono dentro de `async def`
+
+### Manejo de errores
+
+- Nunca `except Exception`
+- Capturar excepciones específicas
+- Jerarquía de dominio (mapear a HTTP en la capa API):
+
+  - `ZenithOpsException` (base)
+  - `ModelNotFoundError` → 404
+  - `ModelNotReadyError` → 503
+  - `InvalidInputError` → 422
+  - `InferenceError` → 500
+
+- Nunca exponer stacktraces al cliente
+- Formato de error de API siempre:
+
+```json
+{"error": "codigo_snake_case", "message": "descripción legible", "detail": {}}
+```
+
+### Logging
+
+- Solo `structlog` con campos estructurados
+- Cada log incluye al menos: `event`, `correlation_id` (y nivel/timestamp según configuración del proyecto)
+- `correlation_id` proviene del middleware y se propaga en el request
+
+### Seguridad
+
+- No secretos, URLs internas ni credenciales hardcodeadas
+- Configuración vía variables de entorno + Pydantic Settings
+- `.env` nunca se commitea
+
+### Dependencias
+
+- No añadir paquetes que no estén reflejados en `pyproject.toml` sin avisar antes
+- Si hace falta uno nuevo: avisar, justificar, e indicar el comando UV apropiado
+
+---
+
+## REGLAS DE TESTING
+
+- Cada pieza de negocio en `core/` tiene al menos un test unitario
+- Cada endpoint: mínimo happy path, 422 (campo que falla), 404, fallo de dependencia externa mockeada
+- Patrón AAA con comentarios `# Arrange` / `# Act` / `# Assert`
+- Nombres de test descriptivos (`test_predict_returns_404_when_model_id_unknown`)
+- Fixtures de BD en `tests/conftest.py`, `scope="function"` por defecto
+- Mocks con nombres descriptivos (`mock_mlflow_client`, no `m`)
+- Nunca `time.sleep()` en tests
+- Integración: BD real de test, no mockear la BD
+
+---
+
+## NAMING
+
+| Elemento | Convención | Ejemplo |
+|----------|------------|---------|
+| Archivos | snake_case | `model_registry.py` |
+| Clases | PascalCase | `ModelRegistry` |
+| Funciones | snake_case | `get_model_by_id` |
+| Constantes | UPPER_SNAKE_CASE | `MAX_RETRIES` |
+| URLs | kebab-case | `/v1/model-registry` |
+| Request model | `*Request` | `PredictionRequest` |
+| Response model | `*Response` | `PredictionResponse` |
+
+---
+
+## REGLAS DE IMPLEMENTACIÓN (SDD)
+
+1. Leer la Spec completa antes de escribir código
+2. Implementar exactamente lo acordado; ni más ni menos
+3. Si hay lagunas, PARAR y listarlas con opciones y tradeoffs; esperar confirmación
+4. Ubicar archivos según la estructura anterior
+5. Orden recomendado: Pydantic → excepciones nuevas → `core/` → `db/` → `api/v1/` → tests unitarios → tests integración
+
+---
+
+## FORMATO DE RESPUESTA DE LA IA
+
+**Al implementar:**
+
+1. Lista de archivos a crear o modificar y por qué
+2. Código por archivo completo (no fragmentos sueltos)
+3. Resumen breve por archivo y decisiones no obvias
+
+**Ante ambigüedad en Spec:** parar, listar qué falta, proponer opciones, esperar
+
+**Nueva dependencia:** avisar antes, comando UV, justificación
+
+---
+
+## LO QUE NUNCA DEBES HACER
+
+- Añadir funcionalidad no especificada en la Spec activa
+- “Mejorar” diseño de la Spec sin acuerdo
+- Crear archivos fuera de la estructura definida
+- Instalar dependencias sin avisar o fuera de `pyproject.toml`
+- Cambiar firmas públicas sin avisar
+- `print()` para logging
+- `except Exception`
+- Lógica de negocio en endpoints
+- Hardcodear lo que debe ser configuración
+- `Any` sin justificación explícita
