@@ -1,11 +1,12 @@
-"""Smoke test until the suite defined in specs is implemented."""
+"""Sanity check: package importable and CLI entrypoint exists."""
 
-from __future__ import annotations
+import zenith_ops
 
 
 def test_package_importable() -> None:
-    """Ensures the installable package resolves on PYTHONPATH."""
-    import zenith_ops
+    assert hasattr(zenith_ops, "main")
 
-    assert callable(zenith_ops.main)
+
+def test_main_runs() -> None:
+    # Solo ejecutamos para ver que no explote
     zenith_ops.main()

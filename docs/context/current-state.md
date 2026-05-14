@@ -1,5 +1,7 @@
 # Estado actual del proyecto — 2026-05-11
 
+**Nota (2026-05-14):** el repositorio quedó en una sola raíz (`pyproject.toml` y `Justfile` al mismo nivel); se eliminó la carpeta duplicada `Zenith-ops/Zenith-ops/`.
+
 ## Completado
 
 - [x] Entorno Python 3.12 con UV (`pyproject.toml`, `uv.lock`)
