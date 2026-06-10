@@ -5,7 +5,6 @@ Uses TestClient against the real FastAPI app with exception handlers.
 
 from fastapi import status
 from fastapi.testclient import TestClient
-
 from zenith_ops import app
 from zenith_ops.core.inference_service import InferenceService
 
@@ -118,14 +117,14 @@ def test_cache_warm_second_request_faster() -> None:
 
     # Cache hit should not be dramatically slower than cache miss.
     # The first request pays disk I/O; the second should be comparable or faster.
-    assert latency2 <= latency1 * 2, (
-        "Second request should not be >2x slower (cache should help)"
-    )
+    assert (
+        latency2 <= latency1 * 2
+    ), "Second request should not be >2x slower (cache should help)"
 
 
 def test_idempotency_key_accepted() -> None:
-    """idempotency_key should be accepted but not processed."""
-    response = client.post(
+    """Same idempotency_key returns cached predicition_id"""
+    response1 = client.post(
         "/v1/predict",
         json={
             "model_id": "iris-classifier",
@@ -133,7 +132,21 @@ def test_idempotency_key_accepted() -> None:
             "idempotency_key": "test-key-123",
         },
     )
-    assert response.status_code == status.HTTP_200_OK
+    body1 = response1.json()
+    prediction_id1 = body1["prediction_id"]
+    response2 = client.post(
+        "/v1/predict",
+        json={
+            "model_id": "iris-classifier",
+            "features": {"sepal_length": 6.2},
+            "idempotency_key": "test-key-123",
+        },
+    )
+    body2 = response2.json()
+    prediction_id2 = body2["prediction_id"]
+    assert response1.status_code == status.HTTP_200_OK
+    assert response2.status_code == status.HTTP_200_OK
+    assert prediction_id1 == prediction_id2
 
 
 class _BrokenModel:
