@@ -19,9 +19,7 @@ from zenith_ops.core.settings import Settings
 client = TestClient(app)
 
 
-ISO_8601_REGEX = (
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
-)
+ISO_8601_REGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
 
 
 class TestLiveEndpoint:
@@ -103,7 +101,9 @@ class TestCheckDatabase:
         mock_conn = AsyncMock()
         mock_engine.connect.return_value.__aenter__.return_value = mock_conn
 
-        with patch("zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine):
+        with patch(
+            "zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine
+        ):
             result = await check_database(settings)
 
         assert result == "up"
@@ -111,13 +111,17 @@ class TestCheckDatabase:
 
     async def test_returns_down_when_connection_fails(self) -> None:
         """When database is unreachable, should return 'down'."""
-        settings = Settings(DATABASE_URL="postgresql+asyncpg://u:p@localhost:1/nonexistent")  # type: ignore[call-arg]
+        settings = Settings(
+            DATABASE_URL="postgresql+asyncpg://u:p@localhost:1/nonexistent"
+        )  # type: ignore[call-arg]
 
         mock_engine = MagicMock()
         mock_engine.dispose = AsyncMock()
         mock_engine.connect.side_effect = ConnectionError("Unreachable")
 
-        with patch("zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine):
+        with patch(
+            "zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine
+        ):
             result = await check_database(settings)
 
         assert result == "down"

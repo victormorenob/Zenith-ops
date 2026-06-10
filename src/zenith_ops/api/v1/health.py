@@ -91,4 +91,3 @@ async def readiness() -> JSONResponse:
             },
         },
     )
-
