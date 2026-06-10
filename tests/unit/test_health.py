@@ -6,15 +6,18 @@ external dependencies to verify zero-I/O behavior for liveness.
 
 import re
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
-from zenith_ops.api.v1.health import get_version
+from zenith_ops.api.v1.health import check_database, check_model_cache, get_version
 
 client = TestClient(app)
+
+from zenith_ops.core.inference_service import InferenceService
+from zenith_ops.core.settings import Settings
 
 ISO_8601_REGEX = (
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
@@ -86,3 +89,54 @@ class TestLiveEndpoint:
             assert body["status"] == "up"
             # DB engine should not be touched by liveness
             mock_engine.assert_not_called()
+
+
+class TestCheckDatabase:
+    """check_database() — async ping via SQLAlchemy."""
+
+    async def test_returns_up_when_select_one_succeeds(self) -> None:
+        """When SELECT 1 succeeds, should return 'up'."""
+        settings = Settings(DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db")  # type: ignore[call-arg]
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_conn = AsyncMock()
+        mock_engine.connect.return_value.__aenter__.return_value = mock_conn
+
+        with patch("zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine):
+            result = await check_database(settings)
+
+        assert result == "up"
+        mock_conn.execute.assert_awaited_once()
+
+    async def test_returns_down_when_connection_fails(self) -> None:
+        """When database is unreachable, should return 'down'."""
+        settings = Settings(DATABASE_URL="postgresql+asyncpg://u:p@localhost:1/nonexistent")  # type: ignore[call-arg]
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_engine.connect.side_effect = ConnectionError("Unreachable")
+
+        with patch("zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine):
+            result = await check_database(settings)
+
+        assert result == "down"
+
+
+class TestCheckModelCache:
+    """check_model_cache() — checks InferenceService cache."""
+
+    def test_returns_true_when_models_are_cached(self) -> None:
+        """When InferenceService has models, should return True."""
+        InferenceService._models["test"] = object()
+        try:
+            result = check_model_cache()
+            assert result is True
+        finally:
+            InferenceService._models.clear()
+
+    def test_returns_false_when_cache_is_empty(self) -> None:
+        """When InferenceService has no models, should return False."""
+        InferenceService._models.clear()
+        result = check_model_cache()
+        assert result is False

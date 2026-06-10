@@ -1,9 +1,16 @@
 """Health check endpoints — liveness and readiness probes."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from importlib.metadata import version
 
 from fastapi import APIRouter
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from zenith_ops.core.inference_service import InferenceService
+from zenith_ops.core.settings import Settings
 
 _Version = version("zenith-ops")
 
@@ -14,6 +21,38 @@ def get_version() -> str:
     Cached at module level — no I/O after first import.
     """
     return _Version
+
+
+@asynccontextmanager
+async def _get_engine(url: str) -> AsyncGenerator[AsyncEngine, None]:
+    """Create an async engine and ensure it is disposed on exit."""
+    engine = create_async_engine(url)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+async def check_database(settings: Settings | None = None) -> str:
+    """Ping the database via SQLAlchemy async connection.
+
+    Returns ``"up"`` if ``SELECT 1`` succeeds, ``"down"`` otherwise.
+    """
+    if settings is None:
+        settings = Settings()  # type: ignore[call-arg]
+    url = str(settings.DATABASE_URL)
+    try:
+        async with _get_engine(url) as engine:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        return "up"
+    except Exception:
+        return "down"
+
+
+def check_model_cache() -> bool:
+    """Return ``True`` if at least one model is cached in InferenceService."""
+    return bool(InferenceService._models)
 
 
 router = APIRouter(prefix="/health", tags=["health"])

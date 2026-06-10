@@ -10,6 +10,6 @@ class Settings(BaseSettings):
     Reads DATABASE_URL from environment (or .env file).
     """
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATABASE_URL: PostgresDsn
