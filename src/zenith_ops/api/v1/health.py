@@ -1,5 +1,6 @@
 """Health check endpoints — liveness and readiness probes."""
 
+from datetime import datetime, timezone
 from importlib.metadata import version
 
 from fastapi import APIRouter
@@ -15,9 +16,15 @@ def get_version() -> str:
     return _Version
 
 
-router = APIRouter()
+router = APIRouter(prefix="/health", tags=["health"])
 
 
-@router.get("/healthy")
-async def get_health_status() -> dict[str, str]:
-    return {"status": "ok"}
+@router.get("/live")
+async def liveness() -> dict[str, str]:
+    """Liveness probe — returns immediately, zero I/O."""
+    return {
+        "status": "up",
+        "version": _Version,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
