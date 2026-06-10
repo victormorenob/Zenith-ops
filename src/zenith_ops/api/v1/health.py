@@ -1,11 +1,14 @@
 """Health check endpoints — liveness and readiness probes."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from importlib.metadata import version
+from typing import Any
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -66,4 +69,28 @@ async def liveness() -> dict[str, str]:
         "version": _Version,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@router.get("/ready")
+async def readiness() -> JSONResponse:
+    """Readiness probe — checks database and model cache concurrently."""
+    db_status, model_cached = await asyncio.gather(
+        check_database(),
+        asyncio.to_thread(check_model_cache),
+    )
+
+    all_up = db_status == "up" and model_cached is True
+
+    return JSONResponse(
+        status_code=200 if all_up else 503,
+        content={
+            "status": "up" if all_up else "down",
+            "version": _Version,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "components": {
+                "database": db_status,
+                "model_cached": model_cached,
+            },
+        },
+    )
 

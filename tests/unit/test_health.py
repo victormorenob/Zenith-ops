@@ -19,6 +19,7 @@ client = TestClient(app)
 from zenith_ops.core.inference_service import InferenceService
 from zenith_ops.core.settings import Settings
 
+
 ISO_8601_REGEX = (
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
 )
@@ -140,3 +141,51 @@ class TestCheckModelCache:
         InferenceService._models.clear()
         result = check_model_cache()
         assert result is False
+
+
+class TestReadyEndpoint:
+    """GET /health/ready — readiness probe with component checks."""
+
+    def test_all_healthy_returns_200(self) -> None:
+        """When all components are up, should return 200 with status 'up'."""
+        with (
+            patch("zenith_ops.api.v1.health.check_database", return_value="up"),
+            patch("zenith_ops.api.v1.health.check_model_cache", return_value=True),
+        ):
+            response = client.get("/health/ready")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "up"
+        assert body["version"] == get_version()
+        assert body["components"]["database"] == "up"
+        assert body["components"]["model_cached"] is True
+        assert re.match(ISO_8601_REGEX, body["timestamp"])
+
+    def test_database_down_returns_503(self) -> None:
+        """When database is down, should return 503 with status 'down'."""
+        with (
+            patch("zenith_ops.api.v1.health.check_database", return_value="down"),
+            patch("zenith_ops.api.v1.health.check_model_cache", return_value=True),
+        ):
+            response = client.get("/health/ready")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        body = response.json()
+        assert body["status"] == "down"
+        assert body["components"]["database"] == "down"
+        assert body["components"]["model_cached"] is True
+
+    def test_model_cache_empty_returns_503(self) -> None:
+        """When model cache is empty, should return 503 with status 'down'."""
+        with (
+            patch("zenith_ops.api.v1.health.check_database", return_value="up"),
+            patch("zenith_ops.api.v1.health.check_model_cache", return_value=False),
+        ):
+            response = client.get("/health/ready")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        body = response.json()
+        assert body["status"] == "down"
+        assert body["components"]["database"] == "up"
+        assert body["components"]["model_cached"] is False
