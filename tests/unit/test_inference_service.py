@@ -30,7 +30,9 @@ class TestCacheMiss:
         model = MagicMock()
         model.predict.return_value = 0.0
 
-        with patch.object(InferenceService, "_load_model", return_value=model) as mock_load:  # type: ignore[reportPrivateUsage]
+        with patch.object(
+            InferenceService, "_load_model", return_value=model
+        ) as mock_load:  # type: ignore[reportPrivateUsage]
             result, result_type, latency = await InferenceService.predict(
                 model_id="test-model",
                 features={"sepal_length": 5.1},
@@ -62,14 +64,17 @@ class TestCacheHit:
         model = MagicMock()
         model.predict.return_value = 0.0
 
-        with patch.object(InferenceService, "_load_model", return_value=model) as mock_load:  # type: ignore[reportPrivateUsage]
+        with patch.object(
+            InferenceService, "_load_model", return_value=model
+        ) as mock_load:  # type: ignore[reportPrivateUsage]
             # First call — cache miss
             await InferenceService.predict("test-model", {"sepal_length": 5.1})
             assert mock_load.call_count == 1
 
             # Second call — cache hit
             result, result_type, latency = await InferenceService.predict(
-                "test-model", {"sepal_length": 5.1},
+                "test-model",
+                {"sepal_length": 5.1},
             )
 
             assert mock_load.call_count == 1  # not incremented
@@ -107,7 +112,9 @@ class TestTimeout:
         InferenceService._models["slow-model"] = slow_model
 
         with (
-            pytest.raises(InferenceTimeoutError, match="Inference took longer than 5000ms"),
+            pytest.raises(
+                InferenceTimeoutError, match="Inference took longer than 5000ms"
+            ),
             patch.object(InferenceService, "_get_model", return_value=slow_model),  # type: ignore[reportPrivateUsage]
         ):
             await InferenceService.predict(
@@ -122,7 +129,9 @@ class TestInferenceError:
     async def test_predict_failure_raises_error(self) -> None:
         """If model.predict() raises, InferenceError should be raised."""
         broken_model = MagicMock()
-        broken_model.predict = MagicMock(side_effect=ValueError("Matrix dimension mismatch"))
+        broken_model.predict = MagicMock(
+            side_effect=ValueError("Matrix dimension mismatch")
+        )
 
         InferenceService._models["broken-model"] = broken_model
 

@@ -14,7 +14,9 @@ app = FastAPI()
 
 
 @app.exception_handler(ModelNotFoundError)
-async def model_not_found_handler(request: Request, exc: ModelNotFoundError) -> JSONResponse:
+async def model_not_found_handler(
+    request: Request, exc: ModelNotFoundError
+) -> JSONResponse:
     return JSONResponse(
         status_code=404,
         content={"error": "model_not_found", "message": str(exc)},
@@ -22,7 +24,9 @@ async def model_not_found_handler(request: Request, exc: ModelNotFoundError) -> 
 
 
 @app.exception_handler(InferenceTimeoutError)
-async def inference_timeout_handler(request: Request, exc: InferenceTimeoutError) -> JSONResponse:
+async def inference_timeout_handler(
+    request: Request, exc: InferenceTimeoutError
+) -> JSONResponse:
     return JSONResponse(
         status_code=503,
         content={"error": "inference_timeout", "message": str(exc)},
@@ -30,7 +34,9 @@ async def inference_timeout_handler(request: Request, exc: InferenceTimeoutError
 
 
 @app.exception_handler(InferenceError)
-async def inference_error_handler(request: Request, exc: InferenceError) -> JSONResponse:
+async def inference_error_handler(
+    request: Request, exc: InferenceError
+) -> JSONResponse:
     return JSONResponse(
         status_code=500,
         content={"error": "inference_error", "message": str(exc)},
