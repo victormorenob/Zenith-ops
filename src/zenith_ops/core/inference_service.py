@@ -32,18 +32,17 @@ class InferenceService:
     """
 
     _models: dict[str, Any] = {}
+    _idempotency_cache: dict[str, tuple[float | list[float], ResultType, float]] = {}
 
     @classmethod
     async def predict(
         cls,
         model_id: str,
         features: dict[str, float],
+        idempotency_key: str | None = None,
     ) -> tuple[float | list[float], ResultType, float]:
-        """Run inference for *model_id* with *features*.
-
-        Returns:
-            Tuple of (result, result_type, latency_ms).
-        """
+        if idempotency_key and idempotency_key in cls._idempotency_cache:
+            return cls._idempotency_cache[idempotency_key]
         t0 = time.monotonic()
 
         model = cls._get_model(model_id)
@@ -59,7 +58,8 @@ class InferenceService:
 
         latency_ms = (time.monotonic() - t0) * 1000
         result_type = cls._get_result_type(result)
-
+        if idempotency_key:
+            cls._idempotency_cache[idempotency_key] = (result, result_type, latency_ms)
         return result, result_type, latency_ms
 
     @classmethod
