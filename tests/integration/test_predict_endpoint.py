@@ -118,9 +118,9 @@ def test_cache_warm_second_request_faster() -> None:
 
     # Cache hit should not be dramatically slower than cache miss.
     # The first request pays disk I/O; the second should be comparable or faster.
-    assert (
-        latency2 <= latency1 * 2
-    ), "Second request should not be >2x slower (cache should help)"
+    assert latency2 <= latency1 * 2, (
+        "Second request should not be >2x slower (cache should help)"
+    )
 
 
 def test_idempotency_key_accepted() -> None:
