@@ -3,9 +3,8 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import version
-from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -45,9 +44,8 @@ async def check_database(settings: Settings | None = None) -> str:
         settings = Settings()  # type: ignore[call-arg]
     url = str(settings.DATABASE_URL)
     try:
-        async with _get_engine(url) as engine:
-            async with engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
+        async with _get_engine(url) as engine, engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         return "up"
     except Exception:
         return "down"
@@ -67,7 +65,7 @@ async def liveness() -> dict[str, str]:
     return {
         "status": "up",
         "version": _Version,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -86,7 +84,7 @@ async def readiness() -> JSONResponse:
         content={
             "status": "up" if all_up else "down",
             "version": _Version,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "components": {
                 "database": db_status,
                 "model_cached": model_cached,

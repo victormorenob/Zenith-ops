@@ -5,7 +5,7 @@ external dependencies to verify zero-I/O behavior for liveness.
 """
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import status
@@ -13,11 +13,10 @@ from fastapi.testclient import TestClient
 
 from zenith_ops import app
 from zenith_ops.api.v1.health import check_database, check_model_cache, get_version
-
-client = TestClient(app)
-
 from zenith_ops.core.inference_service import InferenceService
 from zenith_ops.core.settings import Settings
+
+client = TestClient(app)
 
 
 ISO_8601_REGEX = (
@@ -54,15 +53,15 @@ class TestLiveEndpoint:
         # Verify it's a valid datetime and in UTC
         ts = datetime.fromisoformat(body["timestamp"])
         assert ts.tzinfo is not None, "Timestamp must be timezone-aware"
-        assert ts.tzinfo == timezone.utc or ts.utcoffset() == timezone.utc.utcoffset(None), (
+        assert ts.tzinfo == UTC or ts.utcoffset() == UTC.utcoffset(None), (
             "Timestamp must be in UTC"
         )
 
     def test_timestamp_is_recent(self) -> None:
         """Timestamp should be close to the current time (within 5s)."""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         response = client.get("/health/live")
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert response.status_code == status.HTTP_200_OK
         ts = datetime.fromisoformat(response.json()["timestamp"])
         # The timestamp must be between before and after (within tolerance)
