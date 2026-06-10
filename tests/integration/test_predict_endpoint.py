@@ -5,6 +5,7 @@ Uses TestClient against the real FastAPI app with exception handlers.
 
 from fastapi import status
 from fastapi.testclient import TestClient
+
 from zenith_ops import app
 from zenith_ops.core.inference_service import InferenceService
 
