@@ -1,12 +1,13 @@
-"""Sanity check: package importable and CLI entrypoint exists."""
+"""Quick smoke test for the FastAPI app — does the factory work?"""
 
-import zenith_ops
+from fastapi.testclient import TestClient
 
-
-def test_package_importable() -> None:
-    assert hasattr(zenith_ops, "main")
+from zenith_ops import app
 
 
-def test_main_runs() -> None:
-    # Solo ejecutamos para ver que no explote
-    zenith_ops.main()
+def test_health_live() -> None:
+    """GET /health/live returns 200."""
+    client = TestClient(app)
+    resp = client.get("/health/live")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "up"
