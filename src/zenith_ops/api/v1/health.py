@@ -32,27 +32,27 @@ async def _get_engine(url: str) -> AsyncGenerator[AsyncEngine, None]:
     try:
         yield engine
     finally:
-        await engine.dispose()
+        await engine.dispose()  # return connections to pool
 
 
 async def check_database(settings: Settings | None = None) -> str:
     """Ping the database via SQLAlchemy async connection.
 
-    Returns ``"up"`` if ``SELECT 1`` succeeds, ``"down"`` otherwise.
+    Returns "up" if SELECT 1 succeeds, "down" otherwise.
     """
     if settings is None:
         settings = Settings()  # type: ignore[call-arg]
     url = str(settings.DATABASE_URL)
     try:
         async with _get_engine(url) as engine, engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+            await conn.execute(text("SELECT 1"))  # lightweight ping
         return "up"
     except Exception:
         return "down"
 
 
 def check_model_cache() -> bool:
-    """Return ``True`` if at least one model is cached in InferenceService."""
+    """Return True if at least one model is cached in InferenceService."""
     return bool(InferenceService._models)
 
 
@@ -61,7 +61,11 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("/live")
 async def liveness() -> dict[str, str]:
-    """Liveness probe — returns immediately, zero I/O."""
+    """Liveness probe — returns immediately, zero I/O.
+
+    Kubernetes uses this to know if the process is alive.
+    If this fails -> pod is restarted.
+    """
     return {
         "status": "up",
         "version": _Version,
@@ -71,10 +75,15 @@ async def liveness() -> dict[str, str]:
 
 @router.get("/ready")
 async def readiness() -> JSONResponse:
-    """Readiness probe — checks database and model cache concurrently."""
+    """Readiness probe — checks database and model cache concurrently.
+
+    Kubernetes uses this to know if the pod can receive traffic.
+    If this fails -> pod is removed from Service (no traffic sent).
+    """
+    # Run both checks concurrently (don't wait for DB then check cache)
     db_status, model_cached = await asyncio.gather(
         check_database(),
-        asyncio.to_thread(check_model_cache),
+        asyncio.to_thread(check_model_cache),  # sync function -> thread
     )
 
     all_up = db_status == "up" and model_cached is True
