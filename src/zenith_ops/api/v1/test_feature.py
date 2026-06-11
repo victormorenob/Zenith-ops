@@ -18,6 +18,10 @@ class TestFeatureResponse(BaseModel):
 
 @router.post("/v1/test-feature", status_code=status.HTTP_200_OK)
 async def feature_test(request: TestFeatureRequest) -> TestFeatureResponse:
+    """Echo endpoint for CI/CD smoke tests.
+
+    Returns the input `value` (or 0 if missing/invalid).
+    """
     result = request.data.get("value", 0)
     if not isinstance(result, int):
         result = 0
