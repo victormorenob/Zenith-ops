@@ -149,9 +149,7 @@ async def catch_all(
             "unhandled_exception",
             method=request.method,
             endpoint=request.url.path,
-            correlation_id=getattr(
-                request.state, "correlation_id", "unassigned"
-            ),
+            correlation_id=getattr(request.state, "correlation_id", "unassigned"),
             exc_info=True,
         )
         response = JSONResponse(

@@ -14,9 +14,7 @@ from fastapi.testclient import TestClient
 
 from zenith_ops import app
 
-UUID_V4_REGEX = (
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+UUID_V4_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
 client = TestClient(app)
 
@@ -112,6 +110,7 @@ class TestDomainHandlerPrecedence:
 # This route raises an unhandled RuntimeError so the catch-all middleware
 # must catch it and return a structured JSON 500 response.
 # include_in_schema=False keeps it out of OpenAPI docs.
+
 
 @app.get("/test/raise-error", include_in_schema=False)
 async def _raise_error_handler():
