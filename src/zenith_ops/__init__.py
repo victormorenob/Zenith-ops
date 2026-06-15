@@ -116,6 +116,57 @@ async def log_requests(
     else:
         logger.error("request_completed", **log_kwargs)
 
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
+
+# ──────────────────────────────────────────────────────────────
+# Catch-all middleware — outermost, catches unhandled exceptions
+# ──────────────────────────────────────────────────────────────
+
+
+@app.middleware("http")
+async def catch_all(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Catch any Exception that escapes the domain exception handlers.
+
+    Logs the full traceback via structlog and returns a consistent JSON
+    500 response. The response body never exposes stacktraces or internal
+    details.
+
+    Registered *after* ``log_requests`` so this is the outermost
+    middleware. The ``log_requests`` middleware runs inside ``call_next``,
+    so it still logs ``request_completed`` with the correlation ID for
+    every request — even those that end up here.
+    """
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger = structlog.get_logger("zenith_ops.middleware")
+        logger.error(
+            "unhandled_exception",
+            method=request.method,
+            endpoint=request.url.path,
+            correlation_id=getattr(request.state, "correlation_id", "unassigned"),
+            exc_info=True,
+        )
+        response = JSONResponse(
+            status_code=500,
+            content={
+                "error": "internal_error",
+                "message": "An unexpected error occurred",
+            },
+        )
+
+    # Ensure X-Correlation-ID is always present on the response.
+    # For the normal path, ``log_requests`` already set it. For the
+    # exception path, we set it here as a safety net.
+    if "X-Correlation-ID" not in response.headers:
+        response.headers["X-Correlation-ID"] = getattr(
+            request.state, "correlation_id", "unassigned"
+        )
     return response
 
 
