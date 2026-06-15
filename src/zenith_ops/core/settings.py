@@ -13,3 +13,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATABASE_URL: PostgresDsn  # asyncpg DSN: postgresql+asyncpg://user:pass@host/db
+    LOG_LEVEL: str = (
+        "INFO"  # Default log level; logging_config reads os.environ directly
+    )

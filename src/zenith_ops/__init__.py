@@ -4,8 +4,13 @@ Composition root: wires together all routers, exception handlers,
 and shared dependencies. Only the ASGI entry point (uvicorn) imports this.
 """
 
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+
+import structlog
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from zenith_ops.api.v1.health import router as health_router
 from zenith_ops.api.v1.predict import router as predict_router
@@ -15,6 +20,11 @@ from zenith_ops.core.exceptions import (
     InferenceTimeoutError,
     ModelNotFoundError,
 )
+from zenith_ops.core.logging_config import configure_logging
+
+# ── Configure structured logging before the app is created ────────────
+# This ensures the structlog pipeline is active before any request arrives.
+configure_logging()
 
 app = FastAPI(
     title="Zenith-ops ML Serving",
@@ -64,6 +74,49 @@ async def inference_error_handler(
         status_code=500,
         content={"error": "inference_error", "message": str(exc)},
     )
+
+
+# ──────────────────────────────────────────────────────────────
+# Correlation-ID middleware — wraps every request
+# ──────────────────────────────────────────────────────────────
+
+
+@app.middleware("http")
+async def log_requests(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Assign a UUID v4 correlation_id and log request completion.
+
+    Logs ``request_completed`` at INFO (<400), WARNING (400-499),
+    or ERROR (500+) level with method, endpoint, status,
+    duration_ms, and correlation_id.
+    """
+    correlation_id = str(uuid.uuid4())
+    request.state.correlation_id = correlation_id
+    start = time.monotonic()
+
+    response = await call_next(request)
+
+    duration_ms = (time.monotonic() - start) * 1000
+    status_code = response.status_code
+    logger = structlog.get_logger("zenith_ops.middleware")
+    log_kwargs = {
+        "method": request.method,
+        "endpoint": request.url.path,
+        "status": status_code,
+        "duration_ms": round(duration_ms, 2),
+        "correlation_id": correlation_id,
+    }
+
+    if status_code < 400:
+        logger.info("request_completed", **log_kwargs)
+    elif status_code < 500:
+        logger.warning("request_completed", **log_kwargs)
+    else:
+        logger.error("request_completed", **log_kwargs)
+
+    return response
 
 
 # ──────────────────────────────────────────────────────────────
