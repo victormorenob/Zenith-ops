@@ -1,0 +1,78 @@
+site_name: Zenith-Ops
+site_description: Industrial-grade MLOps infrastructure — FastAPI, MLflow, Kubernetes
+site_author: Víctor Moreno
+site_url: https://victormorenob.github.io/Zenith-ops/
+repo_url: https://github.com/victormorenob/Zenith-ops
+repo_name: victormorenob/Zenith-ops
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Modo oscuro
+    - scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Modo claro
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.path
+    - navigation.top
+    - toc.follow
+    - content.action.edit
+    - content.code.copy
+    - search.highlight
+
+plugins:
+  - search
+  - tags
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/victormorenob
+    - icon: fontawesome/solid/envelope
+      link: mailto:vmbueno5@gmail.com
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: true
+
+nav:
+  - Inicio: index.md
+  - Getting Started: getting-started.md
+  - Arquitectura:
+      - Visión General: context/architecture.md
+      - Decisiones (ADRs):
+          - 'DDD-001: Arquitectura de Zenith-ops': adr/DDD-001-arquitectura.md
+      - Estado Actual: context/current-state.md
+  - Guías:
+      - Convenciones del proyecto: context/conventions.md
+      - Runbooks: runbooks/index.md
+  - Especificaciones:
+      - Template: specs/_TEMPLATE.md
+      - 'SPEC-000: Convenciones de implementación': specs/SPEC-000-project-conventions.md
+      - 'SPEC-001: Prediction Endpoint': specs/SPEC-001-predict-endpoint.md

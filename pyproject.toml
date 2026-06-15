@@ -35,6 +35,7 @@ build-backend = "uv_build"
 dev = [
     "aiosqlite>=0.22.1",
     "commitizen>=4.15.1",
+    "mkdocs-material>=9.7.6",
     "mypy>=2.0.0",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
