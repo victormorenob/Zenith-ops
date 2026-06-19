@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from zenith_ops.api.v1.health import router as health_router
 from zenith_ops.api.v1.predict import router as predict_router
@@ -19,6 +20,7 @@ from zenith_ops.core.exceptions import (
     InferenceError,
     InferenceTimeoutError,
     ModelNotFoundError,
+    Zenitherror,
 )
 from zenith_ops.core.logging_config import configure_logging
 
@@ -76,6 +78,17 @@ async def inference_error_handler(
     )
 
 
+# Zenitherror -> 500 (catch-all for domain exceptions without a specific handler)
+# Future domain exceptions that extend Zenitherror but don't have their own
+# handler will fall through to this generic 500 response.
+@app.exception_handler(Zenitherror)
+async def zenitherror_handler(request: Request, exc: Zenitherror) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_error", "message": str(exc)},
+    )
+
+
 # ──────────────────────────────────────────────────────────────
 # Correlation-ID middleware — wraps every request
 # ──────────────────────────────────────────────────────────────
@@ -91,33 +104,45 @@ async def log_requests(
     Logs ``request_completed`` at INFO (<400), WARNING (400-499),
     or ERROR (500+) level with method, endpoint, status,
     duration_ms, and correlation_id.
+
+    The correlation_id is *bound to the structlog context* via
+    ``bind_contextvars`` so that *any* logger — in any module —
+    during this request automatically includes it.
+    ``clear_contextvars`` runs in ``finally`` to prevent bleeding
+    between requests.
     """
     correlation_id = str(uuid.uuid4())
+    bind_contextvars(correlation_id=correlation_id)
     request.state.correlation_id = correlation_id
     start = time.monotonic()
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration_ms = (time.monotonic() - start) * 1000
+        status_code = response.status_code if "response" in locals() else 503
+        logger = structlog.get_logger("zenith_ops.middleware")
+        log_kwargs = {
+            "method": request.method,
+            "endpoint": request.url.path,
+            "status": status_code,
+            "duration_ms": round(duration_ms, 2),
+            "correlation_id": correlation_id,
+        }
 
-    duration_ms = (time.monotonic() - start) * 1000
-    status_code = response.status_code
-    logger = structlog.get_logger("zenith_ops.middleware")
-    log_kwargs = {
-        "method": request.method,
-        "endpoint": request.url.path,
-        "status": status_code,
-        "duration_ms": round(duration_ms, 2),
-        "correlation_id": correlation_id,
-    }
+        if status_code < 400:
+            logger.info("request_completed", **log_kwargs)
+        elif status_code < 500:
+            logger.warning("request_completed", **log_kwargs)
+        else:
+            logger.error("request_completed", **log_kwargs)
 
-    if status_code < 400:
-        logger.info("request_completed", **log_kwargs)
-    elif status_code < 500:
-        logger.warning("request_completed", **log_kwargs)
-    else:
-        logger.error("request_completed", **log_kwargs)
+        # Set the response header even on error paths.
+        if "response" in locals():
+            response.headers["X-Correlation-ID"] = correlation_id
 
-    response.headers["X-Correlation-ID"] = correlation_id
-    return response
+        clear_contextvars()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -167,6 +192,11 @@ async def catch_all(
         response.headers["X-Correlation-ID"] = getattr(
             request.state, "correlation_id", "unassigned"
         )
+
+    # Clear structlog contextvars to prevent bleeding between requests.
+    # The inner middleware (log_requests) normally handles this, but on
+    # the exception path we do it here as a safety net.
+    clear_contextvars()
     return response
 
 
