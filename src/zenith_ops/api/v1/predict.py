@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from zenith_ops.core.inference_service import InferenceService, ResultType
+from zenith_ops.services.predictor import InferenceService, ResultType
 
 router = APIRouter()
 

@@ -11,8 +11,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from zenith_ops.core.inference_service import InferenceService
 from zenith_ops.core.settings import Settings
+from zenith_ops.services.predictor import InferenceService
 
 _Version = version("zenith-ops")
 

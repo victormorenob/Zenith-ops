@@ -7,13 +7,12 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from zenith_ops.core.exceptions import (
     InferenceError,
     InferenceTimeoutError,
     ModelNotFoundError,
 )
-from zenith_ops.core.inference_service import InferenceService, ResultType
+from zenith_ops.services.predictor import InferenceService, ResultType
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +31,7 @@ class TestCacheMiss:
 
         with patch.object(
             InferenceService, "_load_model", return_value=model
-        ) as mock_load:  # type: ignore[reportPrivateUsage]
+        ) as mock_load:
             result, result_type, latency = await InferenceService.predict(
                 model_id="test-model",
                 features={"sepal_length": 5.1},
@@ -47,7 +46,7 @@ class TestCacheMiss:
         model = MagicMock()
         model.predict.return_value = 42.0
 
-        with patch.object(InferenceService, "_load_model", return_value=model):  # type: ignore[reportPrivateUsage]
+        with patch.object(InferenceService, "_load_model", return_value=model):
             _, _, latency = await InferenceService.predict(
                 model_id="test-model",
                 features={"sepal_length": 5.1},
@@ -66,7 +65,7 @@ class TestCacheHit:
 
         with patch.object(
             InferenceService, "_load_model", return_value=model
-        ) as mock_load:  # type: ignore[reportPrivateUsage]
+        ) as mock_load:
             # First call — cache miss
             await InferenceService.predict("test-model", {"sepal_length": 5.1})
             assert mock_load.call_count == 1
@@ -88,7 +87,7 @@ class TestModelNotFound:
     async def test_invalid_model_id_raises_error(self) -> None:
         """Unknown model_id should raise ModelNotFoundError."""
         with (
-            patch.object(  # type: ignore[reportPrivateUsage]
+            patch.object(
                 InferenceService,
                 "_load_model",
                 side_effect=ModelNotFoundError(model_id="unknown"),
@@ -107,7 +106,7 @@ class TestTimeout:
     async def test_timeout_exceeded_raises_error(self) -> None:
         """Predict that blocks > 5s should raise InferenceTimeoutError."""
         slow_model = MagicMock()
-        slow_model.predict = MagicMock(side_effect=lambda features: time.sleep(10))  # type: ignore[return-value]
+        slow_model.predict = MagicMock(side_effect=lambda features: time.sleep(10))
 
         InferenceService._models["slow-model"] = slow_model
 
@@ -115,7 +114,7 @@ class TestTimeout:
             pytest.raises(
                 InferenceTimeoutError, match="Inference took longer than 5000ms"
             ),
-            patch.object(InferenceService, "_get_model", return_value=slow_model),  # type: ignore[reportPrivateUsage]
+            patch.object(InferenceService, "_get_model", return_value=slow_model),
         ):
             await InferenceService.predict(
                 model_id="slow-model",
@@ -137,7 +136,7 @@ class TestInferenceError:
 
         with (
             pytest.raises(InferenceError, match="Model failed during inference"),
-            patch.object(InferenceService, "_get_model", return_value=broken_model),  # type: ignore[reportPrivateUsage]
+            patch.object(InferenceService, "_get_model", return_value=broken_model),
         ):
             await InferenceService.predict(
                 model_id="broken-model",
@@ -153,7 +152,7 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = 0.5
 
-        with patch.object(InferenceService, "_load_model", return_value=model):  # type: ignore[reportPrivateUsage]
+        with patch.object(InferenceService, "_load_model", return_value=model):
             result, result_type, _ = await InferenceService.predict(
                 model_id="float-model",
                 features={"sepal_length": 5.1},
@@ -166,7 +165,7 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = 1
 
-        with patch.object(InferenceService, "_load_model", return_value=model):  # type: ignore[reportPrivateUsage]
+        with patch.object(InferenceService, "_load_model", return_value=model):
             result, result_type, _ = await InferenceService.predict(
                 model_id="int-model",
                 features={"sepal_length": 5.1},
@@ -179,7 +178,7 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = [0.1, 0.2, 0.3]
 
-        with patch.object(InferenceService, "_load_model", return_value=model):  # type: ignore[reportPrivateUsage]
+        with patch.object(InferenceService, "_load_model", return_value=model):
             result, result_type, _ = await InferenceService.predict(
                 model_id="list-model",
                 features={"sepal_length": 5.1},
