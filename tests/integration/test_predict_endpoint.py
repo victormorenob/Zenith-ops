@@ -5,9 +5,8 @@ Uses TestClient against the real FastAPI app with exception handlers.
 
 from fastapi import status
 from fastapi.testclient import TestClient
-
 from zenith_ops import app
-from zenith_ops.core.inference_service import InferenceService
+from zenith_ops.services.predictor import InferenceService
 
 client = TestClient(app)
 
@@ -118,9 +117,9 @@ def test_cache_warm_second_request_faster() -> None:
 
     # Cache hit should not be dramatically slower than cache miss.
     # The first request pays disk I/O; the second should be comparable or faster.
-    assert latency2 <= latency1 * 2, (
-        "Second request should not be >2x slower (cache should help)"
-    )
+    assert (
+        latency2 <= latency1 * 2
+    ), "Second request should not be >2x slower (cache should help)"
 
 
 def test_idempotency_key_accepted() -> None:
