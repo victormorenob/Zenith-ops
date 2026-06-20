@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import status
 from fastapi.testclient import TestClient
+
 from zenith_ops import app
 from zenith_ops.api.v1.health import check_database, check_model_cache, get_version
 from zenith_ops.core.settings import Settings
@@ -44,15 +45,15 @@ class TestLiveEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
 
-        assert re.match(
-            ISO_8601_REGEX, body["timestamp"]
-        ), f"Timestamp '{body['timestamp']}' does not match ISO 8601"
+        assert re.match(ISO_8601_REGEX, body["timestamp"]), (
+            f"Timestamp '{body['timestamp']}' does not match ISO 8601"
+        )
         # Verify it's a valid datetime and in UTC
         ts = datetime.fromisoformat(body["timestamp"])
         assert ts.tzinfo is not None, "Timestamp must be timezone-aware"
-        assert ts.tzinfo == UTC or ts.utcoffset() == UTC.utcoffset(
-            None
-        ), "Timestamp must be in UTC"
+        assert ts.tzinfo == UTC or ts.utcoffset() == UTC.utcoffset(None), (
+            "Timestamp must be in UTC"
+        )
 
     def test_timestamp_is_recent(self) -> None:
         """Timestamp should be close to the current time (within 5s)."""
@@ -62,9 +63,9 @@ class TestLiveEndpoint:
         assert response.status_code == status.HTTP_200_OK
         ts = datetime.fromisoformat(response.json()["timestamp"])
         # The timestamp must be between before and after (within tolerance)
-        assert (
-            before - timedelta(seconds=1) <= ts <= after + timedelta(seconds=1)
-        ), f"Timestamp {ts} is not close to current time"
+        assert before - timedelta(seconds=1) <= ts <= after + timedelta(seconds=1), (
+            f"Timestamp {ts} is not close to current time"
+        )
 
     def test_zero_io_no_database_or_cache_calls(self) -> None:
         """Liveness must NOT perform any I/O.
