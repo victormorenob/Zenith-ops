@@ -18,18 +18,6 @@ import structlog
 
 
 def configure_logging() -> None:
-    """Configure structlog globally with env-aware processors.
-
-    Sets up:
-    - Log level from ``LOG_LEVEL`` env var (default ``INFO``)
-    - ``ConsoleRenderer`` (dev) or ``JSONRenderer`` (production) based on
-      ``LOG_FORMAT`` env var
-    - Stdlib logging capture via ``structlog.stdlib.LoggerFactory``
-
-    The renderer lives in ``ProcessorFormatter``, NOT in the structlog
-    processor chain — that avoids a ``'tuple' object has no attribute 'pop'``
-    error from ``wrap_for_formatter`` + renderer being in the same chain.
-    """
     log_level = os.environ.get("LOG_LEVEL", "INFO")
 
     # ── Common processors (always present) ──────────────────────────────

@@ -3,35 +3,35 @@
 **Estado:** Aprobado
 **Fecha:** 2026-06-10
 **Autor:** Víctor Moreno
-**Stack actual:** FastAPI, Python 3.12, Pydantic v2, SQLAlchemy async + asyncpg, Alembic, PostgreSQL
+**Stack:** FastAPI, Python 3.12, Pydantic v2, SQLAlchemy async + asyncpg, Alembic, PostgreSQL
 
 ---
 
-## 1. Resumen Ejecutivo de Decisiones
+## 1. Resumen de Decisiones Arquitectónicas
 
-| # | Decisión | Elegido | Justificación (1 línea) |
-|---|----------|---------|------------------------|
-| A | Model Registry storage | PostgreSQL (SQLAlchemy async) | Ya tenemos PostgreSQL + asyncpg + Alembic funcionando; añadir S3 es overkill para 1 dev hasta v3 |
-| B | Serving architecture | FastAPI monolítico con módulos | Microservicios duplican infra, deploy, y tests para 1 dev; la separación en módulos da el mismo aislamiento sin el costo |
-| C | Drift Detection | Evidently + Great Expectations (Fase 2) | Ambos: GX para calidad de datos entrantes, Evidently para drift estadístico batch. Pospuestos hasta tener tráfico real y métricas históricas |
-| D | Orquestación infra | Docker Compose + migration a k3s en v2 | Docker Compose funciona para 1 dev 7-10h; k3s en Hetzner es el salto correcto cuando necesitemos multi-servicio |
-| E | Experiment Tracking | MLflow self-hosted (local) | MLflow se integra con Python/Local sin dependencias externas; W&B y Neptune son caros para portfolio individual |
-| F | Observabilidad | Prometheus + Grafana + Loki | Stack estándar OSS, auto-hosteable en la misma VPS que la app, sin licencias, y es lo que se ve en empresa |
-| G | IaC | Terraform | Estándar de la industria, provider Hetzner existe, HCL versiona infra; Pulumi añade complejidad para 1 dev sin ventaja real |
+| # | Decisión | Elección | Alternativas evaluadas |
+|---|----------|----------|----------------------|
+| A | Almacenamiento del Model Registry | PostgreSQL relacional | MongoDB, SQLite, archivos JSON |
+| B | Arquitectura de Serving | Monolito modular | Microservicios, monolito sin estructura |
+| C | Drift Detection | Evidently + Great Expectations (Fase 2) | Uno solo, ninguno |
+| D | Orquestación | Docker Compose → k3s | Fly.io, AWS EKS |
+| E | Experiment Tracking | MLflow self-hosted | W&B, Neptune |
+| F | Observabilidad | Prometheus + Grafana + Loki | Stack cloud, Datadog |
+| G | IaC | Terraform | Pulumi, Ansible |
 
 ---
 
-## 2. Arquitectura Propuesta
+## 2. Arquitectura
 
-### 2.1 Diagrama de Componentes (v0 → v1)
+### 2.1 Diagrama de Componentes
 
 ```mermaid
 graph TB
-    subgraph "Cliente"
-        CLI[CLI / HTTP Client]
+    subgraph "Client"
+        CLI[HTTP Client]
     end
 
-    subgraph "FastAPI App (Monolito Modular)"
+    subgraph "FastAPI App (Modular Monolith)"
         ROUTER[API Router /v1/]
         
         subgraph "Core Layer"
@@ -42,14 +42,14 @@ graph TB
 
         subgraph "Data Layer"
             MODELS_DB[(PostgreSQL\nModel Registry)]
-            CACHE[(InMemory\nModel Cache)]
-            METRICS_DB[(PostgreSQL\nMetrics / Predictions)]
+            CACHE[(In-Memory\nModel Cache)]
+            METRICS_DB[(PostgreSQL\nPredictions)]
         end
 
         EXC[Exception Handlers]
     end
 
-    subgraph "Infra (hasta v2)"
+    subgraph "Infrastructure"
         PG[(PostgreSQL 16)]
     end
 
@@ -65,7 +65,7 @@ graph TB
     ROUTER -.- EXC
 ```
 
-### 2.2 Flujo de Datos Principal (POST /v1/predict)
+### 2.2 Flujo de Inferencia
 
 ```mermaid
 sequenceDiagram
@@ -73,157 +73,164 @@ sequenceDiagram
     participant R as Router
     participant IS as InferenceService
     participant CACHE as Model Cache
-    participant FS as Filesystem (.joblib)
+    participant FS as Filesystem
     
     C->>R: POST /v1/predict {model_id, features}
-    R->>IS: predict(model_id, features)
-    IS->>CACHE: get model
-    alt Cache miss
-        CACHE->>FS: load model_id.joblib
-        FS-->>CACHE: model object
-        CACHE-->>IS: model
-    else Cache hit
-        CACHE-->>IS: model
+    R->>IS: predict(model_id, features, idempotency_key?)
+    
+    alt Idempotency hit
+        IS-->>R: cached result
+        R-->>C: 200 (from cache)
+    else Idempotency miss
+        IS->>CACHE: get model
+        alt Cache miss
+            CACHE->>FS: load .joblib
+            FS-->>CACHE: model
+        end
+        IS->>IS: run_in_executor(model.predict)
+        IS->>IS: asyncio.wait_for(timeout=5s)
+        
+        alt Timeout
+            IS-->>R: InferenceTimeoutError
+            R-->>C: 503
+        else Success
+            IS-->>R: (result, result_type, latency)
+            R-->>C: 200 {prediction_id, result, ...}
+        end
     end
-    IS->>IS: run_in_executor(model.predict)
-    IS->>IS: asyncio.wait_for(timeout=5s)
-    alt Timeout
-        IS-->>R: InferenceTimeoutError
-        R-->>C: 503
-    else Success
-        IS-->>R: (result, result_type, latency_ms)
-        R-->>C: 200 {prediction_id, result, ...}
-    end
 ```
 
-### 2.3 Límites de Responsabilidad
+### 2.3 Límites entre Capas
 
-| Módulo | Responsabilidad | No responsable de |
-|--------|----------------|-------------------|
-| `api/v1/` | Contratos HTTP, validación Pydantic, routing | Lógica de negocio, acceso a datos |
-| `core/inference_service.py` | Carga de modelos, cacheo, ejecución de inferencia | Persistencia, serialización HTTP |
-| `core/model_registry.py` | CRUD de modelos, versionado, estado | Ejecución de modelos, HTTP |
-| `core/metrics.py` | Cálculo de métricas, drift detection | Almacenamiento, alerting |
-| `core/exceptions.py` | Excepciones de dominio | Manejo HTTP (lo hace el exception handler) |
-| `db/` | Modelos SQLAlchemy, migraciones Alembic | Lógica de negocio |
+| Capa | Responsabilidad | Dependencias permitidas |
+|------|----------------|------------------------|
+| `api/v1/` | Contratos HTTP, validación Pydantic, routing | `core/`, Pydantic schemas |
+| `core/` | Lógica de negocio, modelos, inferencia | `db/` models, librerías externas |
+| `db/` | Modelos SQLAlchemy, migraciones Alembic | SQLAlchemy, alembic |
 
-### 2.4 Interfaces entre Componentes
+Regla fundamental: `core/` no importa de `api/`. `api/` solo usa `core/` para lógica.
 
-```
-InferenceService.predict(model_id, features) → tuple[result, ResultType, latency_ms]
-ModelRegistryService.get_model(model_id) → ModelMetadata
-ModelRegistryService.list_models() → list[ModelMetadata]
-MetricsService.record_prediction(model_id, latency, result_type)
-```
+### 2.4 Interfaces
 
-### 2.5 Cómo Escala de v0 → v3
+| Interfaz | Firma |
+|----------|-------|
+| InferenceService.predict | `(model_id, features, idempotency_key?) → (result, ResultType, latency_ms)` |
+| InferenceService._get_model | `(model_id) → loaded model` |
+| InferenceService._load_model | `(model_id) → model from disk` |
+| ModelRegistryService.get_model | `(model_id) → ModelMetadata` |
+| ModelRegistryService.list_models | `() → list[ModelMetadata]` |
+
+### 2.5 Evolución por Escala
 
 | Escala | Model Registry | Serving | Infra | Observabilidad |
 |--------|---------------|---------|-------|---------------|
-| **v0 (hoy)** | Archivos `.joblib` en `models/` | Monolítico, 1 proceso FastAPI | Docker Compose local | Logs structlog |
-| **v1 (Fase 1-2)** | PostgreSQL (modelos + versiones) | Monolítico + pool workers | Docker Compose + PostgreSQL hosteado | Prometheus + Grafana local |
-| **v2 (Fase 3)** | PostgreSQL + Object Storage para artefactos | Monolítico + workers background | k3s en Hetzner, 1-3 nodos | Prometheus + Grafana + Loki |
-| **v3 (Empresa)** | PostgreSQL + S3/MinIO + catalog | Microservicios separados | k3s con HA, CI/CD GitOps | Stack completo + alerting |
+| **v0** | filesystem (.joblib) | 1 proceso FastAPI | Docker Compose | structlog |
+| **v1** | PostgreSQL + filesystem | FastAPI + thread pool | Docker Compose + PostgreSQL | Prometheus + Grafana |
+| **v2** | + Object Storage | + background workers | k3s (Hetzner) | + Loki |
+| **v3** | + Model Catalog | microservicios separados | k3s HA + GitOps | Stack completo + alerting |
 
 ---
 
 ## 3. Decisiones y Justificaciones
 
-### A. Model Registry: PostgreSQL (SQLAlchemy async)
+### A. Model Registry: PostgreSQL relacional
 
-**Elegido:** PostgreSQL relacional con SQLAlchemy async
+**Decisión:** Tablas normalizadas en PostgreSQL con SQLAlchemy async para metadatos de modelos (nombre, versión, estado, fecha). Artefactos binarios (.joblib) en filesystem.
 
-**Justificación:** Ya tenemos PostgreSQL con asyncpg y Alembic funcionando, probados en SPEC-001. El Model Registry v1 necesita metadatos relacionales (nombre, versión, estado, fecha, ruta del artefacto) — datos que encajan naturalmente en tablas normalizadas. Añadir MinIO/S3 ahora es infraestructura extra sin beneficio real cuando los modelos son `.joblib` de <50MB.
+**Alternativas evaluadas:**
 
-**Trade-off asumido:** Los artefactos binarios (.joblib) se guardan en disco/filesystem, no en la DB. Si los modelos crecen (>100MB), migraremos a Object Storage en v2.
+| Alternativa | Motivo de descarte |
+|-------------|-------------------|
+| MongoDB | Los metadatos son estructurados, no documentos anidados. JSONB en PostgreSQL cubre los casos semi-estructurados sin perder restricciones relacionales |
+| SQLite | Sin concurrencia real. Con requests concurrentes, serializa todo el acceso |
+| Archivos JSON en disco | Sin integridad referencial, sin consultas, sin migraciones. Inviable para producción |
 
-**Riesgo si falla:** Si los modelos superan 500MB y tenemos cientos de versiones, el filesystem local se vuelve inmanejable. **Mitigación:** extraer a MinIO en v2.
+**Trade-offs:**
+- Los artefactos .joblib viven en disco, no en la base de datos. Si el número de versiones crece, el filesystem se vuelve difícil de gestionar
+- Migración a Object Storage (MinIO/S3) cuando los artefactos superen los 100MB
 
-### B. Serving: FastAPI monolítico modular
+### B. Serving: Monolito modular
 
-**Elegido:** Monolito con módulos bien delimitados (api/ core/ db/)
+**Decisión:** Una aplicación FastAPI con separación estricta de paquetes (api/, core/, db/).
 
-**Justificación:** 1 dev, 7-10h/semana. Cada microservicio añade overhead operativo que no justificamos hasta tener 2+ devs o necesidades de escalado independiente.
+**Alternativas evaluadas:**
 
-**Regla:** `core/` no importa de `api/`. `api/` solo importa de `core/`. Prohibición de imports entre paquetes del mismo nivel.
+| Alternativa | Motivo de descarte |
+|-------------|-------------------|
+| Microservicios | Overhead operacional (N Dockerfiles, CI/CD, service discovery) que no se justifica para un solo nodo de despliegue |
+| Monolito sin estructura | El código tiende a mezclar responsabilidades, impidiendo testeo aislado y extracción futura de servicios |
 
-### C. Drift Detection: Evidently + Great Expectations (Fase 2)
+**Regla de alcance:** Cada módulo tiene una responsabilidad única. Si un módulo supera las 400 líneas sin poder descomponerse, se extrae. Si un dominio requiere escalado independiente, se convierte en microservicio.
 
-**Elegido:** Ambos, pospuestos a Fase 2.
+### C. Drift Detection: Evidently + Great Expectations
 
-**Justificación:** No compiten — se complementan. **Great Expectations** valida calidad de datos (nulos, rangos, tipos). **Evidently AI** mide drift estadístico (PSI, KS, Jensen-Shannon). Ninguno es necesario hasta que haya tráfico real.
+**Decisión:** Ambos, implementados en Fase 2.
 
-### D. Orquestación: Docker Compose → k3s en v2
+**Justificación:** No son intercambiables. Great Expectations valida calidad de datos entrantes (nulos, rangos, tipos). Evidently AI mide drift distribucional (PSI, KS, Jensen-Shannon). Implementar ambos desde el inicio añade complejidad sin datos históricos que justifiquen el drift.
 
-**Elegido:** Docker Compose para v0-v1, migración a k3s en Hetzner en v2.
+### D. Orquestación: Docker Compose → k3s
 
-**Justificación:** Docker Compose funciona para 1 dev. k3s añade valor cuando necesitemos rolling updates, service discovery, y escalado horizontal.
+**Decisión:** Docker Compose para desarrollo local, migración a k3s en Hetzner para producción.
+
+**Alternativas evaluadas:**
+
+| Alternativa | Motivo de descarte |
+|-------------|-------------------|
+| Fly.io | No expone conceptos de Kubernetes (pods, services, probes). No prepara para operaciones reales |
+| AWS EKS | Costo elevado (~70€/mínimo) para un entorno de un solo nodo. k3s en Hetzner cuesta ~4€/mes |
 
 ### E. Experiment Tracking: MLflow self-hosted
 
-**Elegido:** MLflow self-hosted (local)
+**Decisión:** MLflow open source, servidor local.
 
-**Justificación:** MLflow se integra con Python con `mlflow.start_run()`. Corre localmente sin servidor separado. W&B/Neptune cuestan dinero y dependen de cloud externo.
+**Alternativas evaluadas:**
+
+| Alternativa | Motivo de descarte |
+|-------------|-------------------|
+| W&B | ~50$/user/mes. Dependencia de cloud externo |
+| Neptune | ~50$/user/mes. Dependencia de cloud externo |
 
 ### F. Observabilidad: Prometheus + Grafana + Loki
 
-**Elegido:** Stack OSS completo
+**Decisión:** Stack OSS completo, auto-hosteable.
 
-**Justificación:** Prometheus scrapea métricas de la app, Grafana visualiza, Loki centraliza logs. Todo auto-hosteable, sin licencias. Es el stack que más pesa en una entrevista técnica.
+**Justificación:** Stack de métricas (Prometheus), dashboards (Grafana), y logs (Loki) en un mismo ecosistema. Sin licencias, sin límites de retention, sin dependencia externa.
 
 ### G. IaC: Terraform
 
-**Elegido:** Terraform con provider hcloud (Hetzner)
+**Decisión:** Terraform con provider hcloud (Hetzner).
 
-**Justificación:** Estándar de la industria. Provider `hcloud` maduro. Versionar infra con HCL es exactamente lo que se espera ver en un portfolio de seniority.
+**Alternativas evaluadas:**
 
----
-
-## 4. Riesgos Críticos
-
-| # | Riesgo | Prob | Impacto | Mitigación | Plan B |
-|---|--------|------|---------|------------|--------|
-| 1 | **Un solo developer**: 7-10h/semana no alcanza | Alta | Alto | Priorizar features por valor de portfolio | Recortar Fase 3 |
-| 2 | **MLflow self-hosted** se vuelve un estorbo | Media | Medio | Evaluar si realmente lo necesitamos en Fase 1 | Reemplazar con scripts planos |
-| 3 | **Prometheus compite por recursos** con la app | Media | Alto | Empezar con métricas en memoria, separar Prometheus a v2 | Grafana Cloud free tier |
-| 4 | **El monolito crece sin control** | Alta | Alto | Scope Rules desde el día 1 | Refactor con extracción de servicios |
-| 5 | **k3s learning curve** frena Fase 2 | Alta | Medio | Dedicar 2 semanas solo a k3s | Mantener Docker Compose para serving |
+| Alternativa | Motivo de descarte |
+|-------------|-------------------|
+| Pulumi (Python) | Más cómodo para un equipo Python, pero Terraform es el estándar de la industria. HCL versiona infraestructura de forma declarativa |
+| Ansible | Imperativo, no diseñado para gestión de estado de infraestructura |
 
 ---
 
-## 5. Hoja de Ruta Técnica
+## 4. Riesgos
 
-### Fase 1: Serving y Registry (Semanas 1-12)
-| Semana | Hito | Estado |
-|--------|------|--------|
-| 1-2 | POST /v1/predict con modelo dummy | ✅ COMPLETED |
-| 3-4 | Model Registry CRUD | 🔜 Próximo |
-| 5-6 | Integración predict + registry | 📝 |
-| 7-10 | Health checks, logging, idempotency | 📝 |
-| 11-12 | Review y documentación | 📝 |
-
-### Fase 2: Observabilidad (Semanas 13-22)
-- Prometheus + Grafana + Loki
-- Evidently + Great Expectations
-- MLflow self-hosted
-
-### Fase 3: Auto-retraining y Escalado (Semanas 23-32)
-- Trigger de retrain automático
-- k3s migration en Hetzner
-- Terraform + GitOps
+| # | Riesgo | Probabilidad | Impacto | Mitigación |
+|---|--------|-------------|---------|------------|
+| 1 | El monolito crece sin mantener la separación de capas | Media | Alto | Scope Rules en cada módulo. Refactor con extracción si se violan |
+| 2 | MLflow se vuelve un servicio más que gestionar | Media | Medio | Evaluar si el valor de tracking justifica el mantenimiento |
+| 3 | k3s añade complejidad operativa (networking, storage, upgrades) | Alta | Alto | Documentación de runbooks antes de la migración |
+| 4 | El cache de modelos en memoria crece sin límite | Baja | Medio | LRU cache con maxsize configurable en próxima iteración |
 
 ---
 
-## Apéndice: Stack por Fase
+## 5. Stack por Iteración
 
-| Componente | Hoy (v0.1) | Fase 1 (v1) | Fase 2 (v2) | Fase 3 (v3) |
-|-----------|-----------|-------------|-------------|-------------|
+| Componente | v0.1 | v1 | v2 | v3 |
+|-----------|------|----|----|----|
 | Backend | FastAPI async | FastAPI async | FastAPI async | FastAPI async |
-| DB | PostgreSQL 16 | PostgreSQL 16 | PostgreSQL 16 | PostgreSQL 16 + MinIO |
+| DB | PostgreSQL 16 | PostgreSQL 16 | PostgreSQL 16 | + MinIO |
 | Model Registry | Filesystem | SQLAlchemy | + MinIO | + Catalog |
 | Inference | Monolítico | Monolítico | + workers | Microservicio |
-| Metrics | structlog | structlog | Prometheus + Grafana | + Loki |
-| Drift | — | — | Evidently + GX | + Alerting |
-| Experiment Tracking | — | — | MLflow local | MLflow server |
-| Orquestación | Docker Compose | Docker Compose | Docker Compose | k3s + Terraform |
+| Logging | structlog | structlog | + Loki | + Loki |
+| Metrics | — | Prometheus + Grafana | + Alerting | + Alerting |
+| Drift | — | — | Evidently + GX | + Auto-remediation |
+| Experiment Tracking | — | MLflow | MLflow server | MLflow server |
+| Orquestación | Docker Compose | Docker Compose | k3s | k3s + GitOps |
 | CI/CD | — | GitHub Actions | + Build | + GitOps |
