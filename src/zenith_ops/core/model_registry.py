@@ -151,7 +151,7 @@ def _parse_semver(version: str) -> tuple[int, ...]:
     return tuple(result)
 
 
-class FileBasedModelRegistry:
+class FileBasedModelRegistry(ModelRegistry):
     """Scans a ``models/`` directory at startup and builds an in-memory catalog.
 
     Directory layout::
@@ -186,12 +186,16 @@ class FileBasedModelRegistry:
     def get_instance(cls) -> FileBasedModelRegistry:
         """Return the singleton instance.
 
-        Creates one on first call with a default ``models/`` path.
+        Creates one on first call with a default ``models/`` path and
+        runs ``scan()``.  Subsequent calls return the cached instance
+        without re-scanning.
+
         This is convenient for the current startup flow; a DI container
         would be cleaner for testing but is overkill in Phase 1.
         """
         if cls._instance is None:
             cls._instance = cls()
+            cls._instance.scan()
         return cls._instance
 
     # -- Scan -------------------------------------------------------
@@ -289,9 +293,11 @@ class FileBasedModelRegistry:
     def resolve_path(self, model_id: str) -> Path:
         """Absolute ``.joblib`` path for ``model_id``.
 
-        The returned path is guaranteed to exist on disk (we validated
-        the directory layout during ``scan()``).  If the model is
-        unknown this raises ``ModelNotFoundError``.
+        The path is computed from the catalog entry (validated during
+        ``scan()``), but the ``.joblib`` artifact itself is NOT verified
+        — it may be missing if removed after scan.
+
+        Raises ``ModelNotFoundError`` if the ``model_id`` is unknown.
         """
         metadata = self.get_model(model_id)  # validates existence
         return (

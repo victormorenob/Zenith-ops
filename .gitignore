@@ -249,8 +249,14 @@ dist/
 *.tfstate.backup
 *.tfvars
 
+# Backup files
+*.bak
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Project-specific
+LokiFase
 # Local AI runtime state
 .atl/
