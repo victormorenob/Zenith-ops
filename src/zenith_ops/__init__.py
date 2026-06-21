@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from zenith_ops.api.v1.health import router as health_router
+from zenith_ops.api.v1.models import router as models_router
 from zenith_ops.api.v1.predict import router as predict_router
 from zenith_ops.api.v1.test_feature import router as feature_router
 from zenith_ops.core.exceptions import (
@@ -207,3 +208,4 @@ async def catch_all(
 app.include_router(health_router)
 app.include_router(feature_router)
 app.include_router(predict_router)
+app.include_router(models_router)

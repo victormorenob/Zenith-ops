@@ -12,6 +12,7 @@ from zenith_ops.core.exceptions import (
     InferenceTimeoutError,
     ModelNotFoundError,
 )
+from zenith_ops.core.model_registry import FileBasedModelRegistry, ModelRegistry
 
 
 class ResultType(StrEnum):
@@ -32,6 +33,10 @@ class InferenceService:
     # Model cache: model_id -> loaded joblib object.
     # Class attribute = shared across ALL instances and requests.
     _models: dict[str, Any] = {}
+
+    # Registry singleton — class-level so tests can inject a mock or
+    # Protocol alternative from Phase 2 (e.g. MLflowModelRegistry).
+    _registry: ModelRegistry | None = None
 
     # Idempotency cache: key -> (result, result_type, latency_ms).
     # In-memory, no TTL in v0.1. For production, use Redis with TTL.
@@ -90,9 +95,12 @@ class InferenceService:
 
     @classmethod
     def _load_model(cls, model_id: str) -> Any:
-        """Load model from disk using joblib."""
+        """Resolve the model path via the registry and load from disk."""
+        if cls._registry is None:
+            cls._registry = FileBasedModelRegistry.get_instance()
+        model_path = cls._registry.resolve_path(model_id)
         try:
-            return joblib.load(f"models/{model_id}.joblib")
+            return joblib.load(model_path)
         except FileNotFoundError:
             raise ModelNotFoundError(model_id) from None
         except Exception:

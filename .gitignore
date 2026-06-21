@@ -29,6 +29,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+#SDD
+./openspec/
+
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -249,8 +252,14 @@ dist/
 *.tfstate.backup
 *.tfvars
 
+# Backup files
+*.bak
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Project-specific
+LokiFase
 # Local AI runtime state
 .atl/

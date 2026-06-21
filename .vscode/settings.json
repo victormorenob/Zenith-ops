@@ -8,7 +8,10 @@
   "editor.fontFamily": "'JetBrains Mono', 'Cascadia Code', monospace",
   "editor.fontLigatures": true,
   "editor.lineHeight": 1.6,
-  "editor.rulers": [88, 120],
+  "editor.rulers": [
+    88,
+    120
+  ],
   "editor.minimap.enabled": false,
   "editor.stickyScroll.enabled": true,
   "editor.inlineSuggest.enabled": true,
@@ -21,5 +24,10 @@
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff"
-  }
+  },
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

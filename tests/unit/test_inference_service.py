@@ -3,16 +3,21 @@
 Tests cover cache behavior, error handling, timeout, and latency measurement.
 """
 
+import json
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import joblib
 import pytest
 
+from zenith_ops.core.dummy_model import DummyIrisClassifier
 from zenith_ops.core.exceptions import (
     InferenceError,
     InferenceTimeoutError,
     ModelNotFoundError,
 )
+from zenith_ops.core.model_registry import FileBasedModelRegistry
 from zenith_ops.services.predictor import InferenceService, ResultType
 
 
@@ -186,3 +191,42 @@ class TestResultType:
             )
             assert result == [0.1, 0.2, 0.3]
             assert result_type == ResultType.ARRAY
+
+
+class TestModelInRegistry:
+    async def test_model_in_registry(self, tmp_path: Path) -> None:
+        model_dir = tmp_path / "models" / "iris-classifier" / "1.0.0"
+        model_dir.mkdir(parents=True)
+        Path(model_dir / "meta.json").write_text(
+            json.dumps(
+                {
+                    "model_id": "iris-classifier",
+                    "name": "Iris Classifier",
+                    "version": "1.0.0",
+                    "framework": "skitlearn",
+                    "status": "active",
+                    "created_at": "2026-06-15T12:00:00Z",
+                    "tags": ["iris"],
+                }
+            )
+        )
+        registry = FileBasedModelRegistry(Path(tmp_path / "models"))
+        joblib.dump(DummyIrisClassifier(), model_dir / "model.joblib")
+        registry.scan()
+        InferenceService._registry = registry
+        result, result_type, latency = await InferenceService.predict(
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+        )
+        assert result == 0.0
+        assert result_type == ResultType.SCALAR
+        assert latency > 0
+        InferenceService._registry = None
+
+    async def test_model_not_in_registry(self, tmp_path: Path) -> None:
+        registry = FileBasedModelRegistry(Path(tmp_path / "models"))
+        registry.scan()
+        InferenceService._registry = registry
+        with pytest.raises(ModelNotFoundError):
+            await InferenceService.predict("model-not-found", {"sepal_length": 0})
+        InferenceService._registry = None
