@@ -6,6 +6,7 @@ Requires the versioned model directory structure seeded by conftest.
 
 from fastapi import status
 from fastapi.testclient import TestClient
+
 from zenith_ops import app
 
 client = TestClient(app)

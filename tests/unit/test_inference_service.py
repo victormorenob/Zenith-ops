@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import joblib
 import pytest
+
 from zenith_ops.core.dummy_model import DummyIrisClassifier
 from zenith_ops.core.exceptions import (
     InferenceError,
