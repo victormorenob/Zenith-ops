@@ -14,7 +14,6 @@ from pathlib import Path
 
 import joblib
 import pytest
-
 from zenith_ops.core.dummy_model import DummyIrisClassifier
 
 MODELS_DIR = Path("models")
@@ -38,9 +37,14 @@ def _seed_registry_structure() -> None:
     ``FileBasedModelRegistry.scan()`` expects:
       ``models/<model_id>/<version>/meta.json``
       ``models/<model_id>/<version>/model.joblib``
+
+    We guard on ``model.joblib`` (not ``meta.json``) because
+    ``meta.json`` is committed to git while ``*.joblib`` files are
+    gitignored.  In a fresh CI checkout ``meta.json`` exists but
+    ``model.joblib`` does not.
     """
     version_dir = MODELS_DIR / MODEL_ID / MODEL_VERSION
-    if (version_dir / "meta.json").exists():
+    if (version_dir / "model.joblib").exists():
         return
     os.makedirs(version_dir, exist_ok=True)
 
