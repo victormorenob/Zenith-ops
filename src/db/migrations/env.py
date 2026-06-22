@@ -5,8 +5,9 @@ from logging.config import fileConfig
 from typing import Any
 
 from alembic import context
-from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import NullPool
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from zenith_ops.core.settings import Settings
 from zenith_ops.db.base import Base
 
