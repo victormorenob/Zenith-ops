@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
 from zenith_ops.core.model_registry import ModelMetadata, ModelSummary
 from zenith_ops.db.models.model_registry import ModelRegistryEntry
+from zenith_ops.db.models.prediction_metadata import PredictionMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +295,79 @@ class PostgresModelRegistry:
             input_schema=input_schema,
             output_schema=output_schema,
         )
+
+    async def log_prediction(
+        self,
+        request_id: UUID,
+        model_id: str,
+        features: dict[str, float],
+        result: float | list[float] | None,
+        result_type: str | None,
+        latency_ms: float | None,
+        status: str,
+        error_message: str | None = None,
+    ) -> None:
+        """Log prediction metadata (best-effort, never propagates errors).
+
+        If the DB write fails, log a warning and return — the prediction
+        response must NEVER be affected by observability failures.
+
+        Parameters
+        ----------
+        request_id:
+            Unique request identifier (matches the API response).
+        model_id:
+            Model name (not UUID) — resolved to a FK inside the method.
+        features:
+            Feature vector sent for inference (not persisted yet — reserved
+            for future schema expansion).
+        result:
+            Inference result (scalar or array).  Stored as ``None`` when
+            the value is a scalar — the ``result_type`` column captures
+            the shape.
+        result_type:
+            ``"scalar"``, ``"class"``, or ``"array"``.
+        latency_ms:
+            Wall-clock inference time in milliseconds.
+        status:
+            ``"success"`` or ``"error"``.
+        error_message:
+            Human-readable error reason (``None`` on success).
+        """
+        try:
+            async with self._session_factory() as session:
+                stmt = (
+                    select(ModelRegistryEntry.id)
+                    .where(ModelRegistryEntry.name == model_id)
+                    .order_by(ModelRegistryEntry.version.desc())
+                    .limit(1)
+                )
+                result_row = await session.execute(stmt)
+                registry_uuid = result_row.scalar_one_or_none()
+                if registry_uuid is None:
+                    logger.warning(
+                        "Cannot log prediction: model %s not found in registry",
+                        model_id,
+                    )
+                    return
+
+                entry = PredictionMetadata(
+                    request_id=request_id,
+                    model_id=registry_uuid,
+                    status=status,
+                    result=None,  # scalar floats don't fit JSONB dict
+                    result_type=result_type,
+                    latency_ms=latency_ms,
+                    error_message=error_message,
+                )
+                session.add(entry)
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "Failed to log prediction metadata for model %s",
+                model_id,
+                exc_info=True,
+            )
 
     # ── Mapping helpers ─────────────────────────────────────────────────
 

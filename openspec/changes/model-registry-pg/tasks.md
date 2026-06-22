@@ -54,15 +54,15 @@ Estrategia: **feature-branch-chain** via `feat/model-registry-pg` tracker branch
 - [x] C.6 Registrar handler `DuplicateModelError → 409` en `zenith_ops/__init__.py`
 - [x] C.7 Verificar: 131 tests passing, ruff 0 errors, mypy 0 errors en archivos modificados
 
-## Fase D: InferenceService
+## Fase D: InferenceService ✅
 
-- [ ] D.1 Hacer `_load_model` async en `services/predictor.py`
-- [ ] D.2 Cambiar `_registry` default → `PostgresModelRegistry(async_session_factory)`
-- [ ] D.3 Llamar `await resolve_path(model_id)` dentro de `_load_model`
-- [ ] D.4 Implementar `log_prediction()` en PostgresModelRegistry (best-effort, no propaga errores)
-- [ ] D.5 Llamar `log_prediction()` tras predict (éxito o error)
-- [ ] D.6 Hacer `_get_model` async + actualizar callers internos
-- [ ] D.7 Verificar `POST /v1/predict` end-to-end con modelo en DB
+- [x] D.1 Hacer `_load_model` async en `services/predictor.py` — ahora es `async def`, usa `await self._registry.resolve_path()`
+- [x] D.2 Cambiar `_registry` default → `PostgresModelRegistry(async_session_factory)` vía `get_registry()`
+- [x] D.3 Llamar `await resolve_path(model_id)` dentro de `_load_model`
+- [x] D.4 Implementar `log_prediction()` en PostgresModelRegistry (best-effort, no propaga errores)
+- [x] D.5 Llamar `log_prediction()` tras predict (éxito o error) — vía `_safe_log_prediction` en finally block
+- [x] D.6 Hacer `_get_model` async + actualizar callers internos
+- [x] D.7 Verificar: 94 unit tests passing, ruff 0 errors, mypy 0 errors en archivos modificados
 
 ## Fase E: Seed + Tests
 

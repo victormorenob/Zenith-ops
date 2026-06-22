@@ -6,7 +6,7 @@ Tests cover cache behavior, error handling, timeout, and latency measurement.
 import json
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import joblib
 import pytest
@@ -36,14 +36,14 @@ class TestCacheMiss:
         model.predict.return_value = 0.0
 
         with patch.object(
-            InferenceService, "_load_model", return_value=model
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
         ) as mock_load:
             result, result_type, latency = await InferenceService.predict(
                 model_id="test-model",
                 features={"sepal_length": 5.1},
             )
 
-            mock_load.assert_called_once_with("test-model")
+            mock_load.assert_awaited_once_with("test-model")
             assert result == 0.0
             assert result_type == ResultType.SCALAR
 
@@ -52,7 +52,9 @@ class TestCacheMiss:
         model = MagicMock()
         model.predict.return_value = 42.0
 
-        with patch.object(InferenceService, "_load_model", return_value=model):
+        with patch.object(
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
+        ):
             _, _, latency = await InferenceService.predict(
                 model_id="test-model",
                 features={"sepal_length": 5.1},
@@ -70,7 +72,7 @@ class TestCacheHit:
         model.predict.return_value = 0.0
 
         with patch.object(
-            InferenceService, "_load_model", return_value=model
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
         ) as mock_load:
             # First call — cache miss
             await InferenceService.predict("test-model", {"sepal_length": 5.1})
@@ -96,6 +98,7 @@ class TestModelNotFound:
             patch.object(
                 InferenceService,
                 "_load_model",
+                new_callable=AsyncMock,
                 side_effect=ModelNotFoundError(model_id="unknown"),
             ),
             pytest.raises(ModelNotFoundError, match="No model found with id: unknown"),
@@ -120,7 +123,12 @@ class TestTimeout:
             pytest.raises(
                 InferenceTimeoutError, match="Inference took longer than 5000ms"
             ),
-            patch.object(InferenceService, "_get_model", return_value=slow_model),
+            patch.object(
+                InferenceService,
+                "_get_model",
+                new_callable=AsyncMock,
+                return_value=slow_model,
+            ),
         ):
             await InferenceService.predict(
                 model_id="slow-model",
@@ -142,7 +150,12 @@ class TestInferenceError:
 
         with (
             pytest.raises(InferenceError, match="Model failed during inference"),
-            patch.object(InferenceService, "_get_model", return_value=broken_model),
+            patch.object(
+                InferenceService,
+                "_get_model",
+                new_callable=AsyncMock,
+                return_value=broken_model,
+            ),
         ):
             await InferenceService.predict(
                 model_id="broken-model",
@@ -158,7 +171,9 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = 0.5
 
-        with patch.object(InferenceService, "_load_model", return_value=model):
+        with patch.object(
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
+        ):
             result, result_type, _ = await InferenceService.predict(
                 model_id="float-model",
                 features={"sepal_length": 5.1},
@@ -171,7 +186,9 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = 1
 
-        with patch.object(InferenceService, "_load_model", return_value=model):
+        with patch.object(
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
+        ):
             result, result_type, _ = await InferenceService.predict(
                 model_id="int-model",
                 features={"sepal_length": 5.1},
@@ -184,7 +201,9 @@ class TestResultType:
         model = MagicMock()
         model.predict.return_value = [0.1, 0.2, 0.3]
 
-        with patch.object(InferenceService, "_load_model", return_value=model):
+        with patch.object(
+            InferenceService, "_load_model", new_callable=AsyncMock, return_value=model
+        ):
             result, result_type, _ = await InferenceService.predict(
                 model_id="list-model",
                 features={"sepal_length": 5.1},
