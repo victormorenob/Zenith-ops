@@ -11,10 +11,45 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
+  init:
+    build:
+      context: ../..
+      dockerfile: infra/docker/init.Dockerfile
+    container_name: zenith-init-model
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ZenithOpsDatabase
+    volumes:
+      - ../../models:/app/models
+    depends_on:
+      - postgres
+    profiles:
+      - dev
+    restart: no
+
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: zenith-app
+    command: uvicorn zenith_ops.__init__:app --host 0.0.0.0 --port 8081 --reload
+    ports:
+      - "8081:8081"
+    volumes:
+      - ../../src:/app/src
+      - ../../models:/app/models
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ZenithOpsDatabase
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    profiles:
+      - dev
 
 volumes:
   pgdata:
