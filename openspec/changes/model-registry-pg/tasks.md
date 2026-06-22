@@ -33,16 +33,16 @@ Estrategia: **feature-branch-chain** via `feat/model-registry-pg` tracker branch
 
 ## Fase B: PostgresModelRegistry
 
-- [ ] B.1 Hacer `async def` los 3 métodos del Protocol en `core/model_registry.py`
-- [ ] B.2 Marcar `FileBasedModelRegistry` como deprecated (docstring)
-- [ ] B.3 Crear `core/model_registry_db.py` con `PostgresModelRegistry.__init__(session_factory)`
-- [ ] B.4 Implementar `list_models()` — latest version per name (excluir archived)
-- [ ] B.5 Implementar `get_model()` — WHERE name=model_id ORDER BY version DESC
-- [ ] B.6 Implementar `resolve_path()` — retornar `artifact_path` desde DB
-- [ ] B.7 Implementar `register_model()` — INSERT + UniqueViolation → DuplicateModelError
-- [ ] B.8 Implementar `update_status()` — validar staging/production/archived
-- [ ] B.9 Adaptar tests unitarios FileBased para async
-- [ ] B.10 Verificar `pytest tests/unit/test_model_registry.py` + `mypy src/`
+- [x] B.1 Hacer `async def` los 3 métodos del Protocol en `core/model_registry.py`
+- [x] B.2 Marcar `FileBasedModelRegistry` como deprecated (docstring)
+- [x] B.3 Crear `core/model_registry_db.py` con `PostgresModelRegistry.__init__(session_factory)`
+- [x] B.4 Implementar `list_models()` — latest version per name (excluir archived)
+- [x] B.5 Implementar `get_model()` — WHERE name=model_id ORDER BY version DESC
+- [x] B.6 Implementar `resolve_path()` — retornar `artifact_path` desde DB
+- [x] B.7 Implementar `register_model()` — INSERT + UniqueViolation → DuplicateModelError
+- [x] B.8 Implementar `update_status()` — validar staging/production/archived
+- [x] B.9 Adaptar tests unitarios FileBased para async
+- [x] B.10 Verificar `pytest tests/unit/test_model_registry.py` + `mypy src/`
 
 ## Fase C: API Wiring
 

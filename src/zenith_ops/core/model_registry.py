@@ -74,6 +74,8 @@ class ModelMetadata(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metrics: dict[str, float] = Field(default_factory=dict)
     status: str = "active"  # "active" | "staging" | "archived"
+    artifact_path: str = ""
+    """Path to the serialised artifact on disk (empty for file-based)."""
     tags: list[str] = Field(default_factory=list)
     input_schema: ModelIOSchema | None = None
     output_schema: ModelIOSchema | None = None
@@ -110,18 +112,18 @@ class ModelRegistry(Protocol):
     in the core layer needs to change.
     """
 
-    def list_models(self) -> list[ModelSummary]:
+    async def list_models(self) -> list[ModelSummary]:
         """Return the latest *active* version of every model."""
         ...
 
-    def get_model(self, model_id: str) -> ModelMetadata:
+    async def get_model(self, model_id: str) -> ModelMetadata:
         """Return the latest *active* version of ``model_id``.
 
         Raises ``ModelNotFoundError`` if the model does not exist.
         """
         ...
 
-    def resolve_path(self, model_id: str) -> Path:
+    async def resolve_path(self, model_id: str) -> Path:
         """Return the absolute path to the model artifact on disk.
 
         Raises ``ModelNotFoundError`` if the model does not exist.
@@ -153,6 +155,10 @@ def _parse_semver(version: str) -> tuple[int, ...]:
 
 class FileBasedModelRegistry(ModelRegistry):
     """Scans a ``models/`` directory at startup and builds an in-memory catalog.
+
+    .. deprecated::
+       Use :class:`PostgresModelRegistry` instead.  This implementation
+       is kept for reference and unit tests without a database.
 
     Directory layout::
 
@@ -258,7 +264,7 @@ class FileBasedModelRegistry(ModelRegistry):
 
     # -- Query methods ----------------------------------------------
 
-    def list_models(self) -> list[ModelSummary]:
+    async def list_models(self) -> list[ModelSummary]:
         """Latest active version per model, as lightweight summaries."""
         summaries: list[ModelSummary] = []
         for model_id, versions in self._catalog.items():
@@ -278,7 +284,7 @@ class FileBasedModelRegistry(ModelRegistry):
             )
         return sorted(summaries, key=lambda s: s.model_id)
 
-    def get_model(self, model_id: str) -> ModelMetadata:
+    async def get_model(self, model_id: str) -> ModelMetadata:
         """Latest active version of ``model_id``, or raises ``ModelNotFoundError``."""
         versions = self._catalog.get(model_id)
         if versions is None:
@@ -290,7 +296,7 @@ class FileBasedModelRegistry(ModelRegistry):
 
         return latest
 
-    def resolve_path(self, model_id: str) -> Path:
+    async def resolve_path(self, model_id: str) -> Path:
         """Absolute ``.joblib`` path for ``model_id``.
 
         The path is computed from the catalog entry (validated during
@@ -299,7 +305,7 @@ class FileBasedModelRegistry(ModelRegistry):
 
         Raises ``ModelNotFoundError`` if the ``model_id`` is unknown.
         """
-        metadata = self.get_model(model_id)  # validates existence
+        metadata = await self.get_model(model_id)  # validates existence
         return (
             self.models_dir / model_id / metadata.version / "model.joblib"
         ).resolve()
