@@ -1,9 +1,6 @@
 """Tests for SQLAlchemy ORM models (Phase A — Foundation)."""
 
-import uuid
-
-import pytest
-from sqlalchemy import ForeignKey, Text, UniqueConstraint
+from sqlalchemy import UniqueConstraint
 from sqlalchemy import inspect as sa_inspect
 
 from zenith_ops.db.base import Base
@@ -27,26 +24,19 @@ class TestModelRegistryEntry:
     def test_unique_constraint_name_version(self) -> None:
         """Table MUST have a unique constraint on (name, version)."""
         constraints = ModelRegistryEntry.__table_args__
-        uq_constraints = [
-            tc for tc in constraints if isinstance(tc, UniqueConstraint)
-        ]
+        uq_constraints = [tc for tc in constraints if isinstance(tc, UniqueConstraint)]
         assert len(uq_constraints) >= 1
         names_found = any(
-            set(tc.columns.keys()) == {"name", "version"}
-            for tc in uq_constraints
+            set(tc.columns.keys()) == {"name", "version"} for tc in uq_constraints
         )
-        assert names_found, (
-            "No UniqueConstraint covering (name, version) found"
-        )
+        assert names_found, "No UniqueConstraint covering (name, version) found"
 
     def test_jsonb_columns_present(self) -> None:
         """Model MUST include JSONB columns for metrics, tags, schemas."""
         mapper = sa_inspect(ModelRegistryEntry)
         col_names = {c.name for c in mapper.columns}
         for jsonb_col in ("metrics", "tags", "input_schema", "output_schema"):
-            assert jsonb_col in col_names, (
-                f"Missing JSONB column: {jsonb_col}"
-            )
+            assert jsonb_col in col_names, f"Missing JSONB column: {jsonb_col}"
 
     def test_timestamp_columns(self) -> None:
         """Model MUST have created_at, updated_at, deployed_at."""
@@ -107,9 +97,7 @@ class TestPredictionMetadata:
         nullable_cols = {"result", "result_type", "latency_ms", "error_message"}
         for col_name in nullable_cols:
             col = mapper.columns[col_name]
-            assert col.nullable is True, (
-                f"{col_name} should be nullable"
-            )
+            assert col.nullable is True, f"{col_name} should be nullable"
 
     def test_registered_on_base_metadata(self) -> None:
         """Model MUST be registered on Base.metadata."""

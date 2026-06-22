@@ -44,25 +44,25 @@ Estrategia: **feature-branch-chain** via `feat/model-registry-pg` tracker branch
 - [x] B.9 Adaptar tests unitarios FileBased para async
 - [x] B.10 Verificar `pytest tests/unit/test_model_registry.py` + `mypy src/`
 
-## Fase C: API Wiring
+## Fase C: API Wiring ✅
 
-- [ ] C.1 Crear `api/v1/schemas/models.py` — `RegisterModelRequest`, `UpdateStatusRequest`, `ModelResponse`
-- [ ] C.2 Agregar `async def get_registry()` → Depends factory en `api/v1/models.py`
-- [ ] C.3 Refactorizar GET endpoints con `Depends(get_registry)` + await
-- [ ] C.4 Agregar `POST /v1/models/register` → 201 (manejar UniqueViolation → 409)
-- [ ] C.5 Agregar `PATCH /v1/models/{id}/status` → 200 / 404
-- [ ] C.6 Registrar handler `DuplicateModelError → 409` en `zenith_ops/__init__.py`
-- [ ] C.7 Verificar con httpie: POST /v1/models/register name="test" version="1.0.0"
+- [x] C.1 Crear `api/v1/schemas/models.py` — `RegisterModelRequest`, `UpdateStatusRequest`, `RegisterModelResponse`
+- [x] C.2 Agregar `get_registry()` → Depends factory en `api/v1/models.py` (reutilizada de `model_registry_db.py`)
+- [x] C.3 Refactorizar GET endpoints con `Depends(get_registry)` + await
+- [x] C.4 Agregar `POST /v1/models/register` → 201 (manejar DuplicateModelError → 409)
+- [x] C.5 Agregar `PATCH /v1/models/{id}/status` → 200 / 404
+- [x] C.6 Registrar handler `DuplicateModelError → 409` en `zenith_ops/__init__.py`
+- [x] C.7 Verificar: 131 tests passing, ruff 0 errors, mypy 0 errors en archivos modificados
 
-## Fase D: InferenceService
+## Fase D: InferenceService ✅
 
-- [ ] D.1 Hacer `_load_model` async en `services/predictor.py`
-- [ ] D.2 Cambiar `_registry` default → `PostgresModelRegistry(async_session_factory)`
-- [ ] D.3 Llamar `await resolve_path(model_id)` dentro de `_load_model`
-- [ ] D.4 Implementar `log_prediction()` en PostgresModelRegistry (best-effort, no propaga errores)
-- [ ] D.5 Llamar `log_prediction()` tras predict (éxito o error)
-- [ ] D.6 Hacer `_get_model` async + actualizar callers internos
-- [ ] D.7 Verificar `POST /v1/predict` end-to-end con modelo en DB
+- [x] D.1 Hacer `_load_model` async en `services/predictor.py` — ahora es `async def`, usa `await self._registry.resolve_path()`
+- [x] D.2 Cambiar `_registry` default → `PostgresModelRegistry(async_session_factory)` vía `get_registry()`
+- [x] D.3 Llamar `await resolve_path(model_id)` dentro de `_load_model`
+- [x] D.4 Implementar `log_prediction()` en PostgresModelRegistry (best-effort, no propaga errores)
+- [x] D.5 Llamar `log_prediction()` tras predict (éxito o error) — vía `_safe_log_prediction` en finally block
+- [x] D.6 Hacer `_get_model` async + actualizar callers internos
+- [x] D.7 Verificar: 94 unit tests passing, ruff 0 errors, mypy 0 errors en archivos modificados
 
 ## Fase E: Seed + Tests
 

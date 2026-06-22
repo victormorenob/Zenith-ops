@@ -1,0 +1,1 @@
+--8<-- "../../openspec/specs/health/spec.md"

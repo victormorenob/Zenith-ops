@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
 from zenith_ops.core.model_registry import ModelMetadata, ModelSummary
 from zenith_ops.db.models.model_registry import ModelRegistryEntry
+from zenith_ops.db.models.prediction_metadata import PredictionMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,151 @@ class PostgresModelRegistry:
             await session.commit()
             await session.refresh(entry)
             return self._to_metadata(entry)
+
+    async def register_and_build_model(
+        self,
+        name: str,
+        version: str,
+        framework: str,
+        model_type: str,
+        description: str = "",
+        metrics: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        input_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | None = None,
+    ) -> ModelMetadata:
+        """Register a model version AND generate its ``.joblib`` artifact.
+
+        This is a convenience for the common case where the client provides
+        a ``model_type`` (e.g. ``"dummy_iris"``) instead of a pre-built
+        artifact.  The method:
+
+        1. Builds the model instance via :func:`build_model`.
+        2. Serialises it to ``models/{name}/{version}/model.joblib``.
+        3. Delegates to :meth:`register_model` for the DB insert.
+
+        Parameters
+        ----------
+        name:
+            Model name.
+        version:
+            Semantic version string.
+        framework:
+            ML framework label.
+        model_type:
+            Key into the model builders registry.
+        description:
+            Human-readable description.
+        metrics, tags, input_schema, output_schema:
+            Forwarded to :meth:`register_model`.
+
+        Returns
+        -------
+        ModelMetadata from the newly created DB row.
+
+        Raises
+        ------
+        ValueError
+            If *model_type* is unknown.
+        DuplicateModelError
+            If ``(name, version)`` already exists.
+        """
+        from pathlib import Path
+
+        import joblib
+
+        from zenith_ops.core.model_builders import build_model
+
+        model_obj = build_model(model_type)
+        models_dir = Path("models") / name / version
+        models_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = str(models_dir / "model.joblib")
+        joblib.dump(model_obj, artifact_path)
+
+        return await self.register_model(
+            name=name,
+            version=version,
+            framework=framework,
+            artifact_path=artifact_path,
+            description=description,
+            metrics=metrics,
+            tags=tags,
+            input_schema=input_schema,
+            output_schema=output_schema,
+        )
+
+    async def log_prediction(
+        self,
+        request_id: UUID,
+        model_id: str,
+        features: dict[str, float],
+        result: float | list[float] | None,
+        result_type: str | None,
+        latency_ms: float | None,
+        status: str,
+        error_message: str | None = None,
+    ) -> None:
+        """Log prediction metadata (best-effort, never propagates errors).
+
+        If the DB write fails, log a warning and return — the prediction
+        response must NEVER be affected by observability failures.
+
+        Parameters
+        ----------
+        request_id:
+            Unique request identifier (matches the API response).
+        model_id:
+            Model name (not UUID) — resolved to a FK inside the method.
+        features:
+            Feature vector sent for inference (not persisted yet — reserved
+            for future schema expansion).
+        result:
+            Inference result (scalar or array).  Stored as ``None`` when
+            the value is a scalar — the ``result_type`` column captures
+            the shape.
+        result_type:
+            ``"scalar"``, ``"class"``, or ``"array"``.
+        latency_ms:
+            Wall-clock inference time in milliseconds.
+        status:
+            ``"success"`` or ``"error"``.
+        error_message:
+            Human-readable error reason (``None`` on success).
+        """
+        try:
+            async with self._session_factory() as session:
+                stmt = (
+                    select(ModelRegistryEntry.id)
+                    .where(ModelRegistryEntry.name == model_id)
+                    .order_by(ModelRegistryEntry.version.desc())
+                    .limit(1)
+                )
+                result_row = await session.execute(stmt)
+                registry_uuid = result_row.scalar_one_or_none()
+                if registry_uuid is None:
+                    logger.warning(
+                        "Cannot log prediction: model %s not found in registry",
+                        model_id,
+                    )
+                    return
+
+                entry = PredictionMetadata(
+                    request_id=request_id,
+                    model_id=registry_uuid,
+                    status=status,
+                    result=None,  # scalar floats don't fit JSONB dict
+                    result_type=result_type,
+                    latency_ms=latency_ms,
+                    error_message=error_message,
+                )
+                session.add(entry)
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "Failed to log prediction metadata for model %s",
+                model_id,
+                exc_info=True,
+            )
 
     # ── Mapping helpers ─────────────────────────────────────────────────
 

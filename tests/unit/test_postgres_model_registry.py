@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +14,7 @@ from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
 from zenith_ops.core.model_registry import ModelMetadata, ModelSummary
 from zenith_ops.core.model_registry_db import PostgresModelRegistry
 from zenith_ops.db.models.model_registry import ModelRegistryEntry
+from zenith_ops.db.models.prediction_metadata import PredictionMetadata
 
 # ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -333,6 +335,136 @@ class TestUpdateStatus:
                 model_uuid="550e8400-e29b-41d4-a716-446655440000",
                 status="production",
             )
+
+
+# ── C.Extra: register_and_build_model (Phase C) ──────────────────────────
+
+
+class TestRegisterAndBuildModel:
+    """register_and_build_model generates a .joblib from model_type."""
+
+    async def test_calls_build_and_register(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """register_and_build_model builds model, dumps it, and calls register_model."""
+        none_result = MagicMock()
+        none_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = none_result
+
+        def _refresh_side_effect(obj) -> None:
+            obj.id = "550e8400-e29b-41d4-a716-446655440000"
+            obj.created_at = datetime(2026, 6, 22, 12, 0, 0, tzinfo=UTC)
+
+        mock_session.refresh.side_effect = _refresh_side_effect
+
+        metadata = await registry.register_and_build_model(
+            name="new-model",
+            version="1.0.0",
+            framework="sklearn",
+            model_type="dummy_iris",
+            description="Built from model_type",
+            metrics={"accuracy": 0.99},
+            tags=["auto"],
+        )
+
+        assert metadata.name == "new-model"
+        assert metadata.version == "1.0.0"
+        assert metadata.status == "staging"
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+
+    async def test_unknown_model_type_raises_value_error(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """An unknown model_type must propagate ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="desconocido"):
+            await registry.register_and_build_model(
+                name="bad-model",
+                version="1.0.0",
+                framework="sklearn",
+                model_type="nonexistent_type",
+            )
+
+
+# ── log_prediction (Phase D) ──────────────────────────────────────────────
+
+
+class TestLogPrediction:
+    """log_prediction saves prediction metadata (best-effort, no error prop)."""
+
+    async def test_log_prediction_success(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """When model is found, prediction metadata is inserted and committed."""
+        model_uuid = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = model_uuid
+        mock_session.execute.return_value = result_mock
+
+        request_id = uuid.uuid4()
+        await registry.log_prediction(
+            request_id=request_id,
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+            result=0.5,
+            result_type="scalar",
+            latency_ms=10.0,
+            status="success",
+            error_message=None,
+        )
+
+        mock_session.execute.assert_awaited()
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+        added_entry: PredictionMetadata = mock_session.add.call_args[0][0]
+        assert added_entry.request_id == request_id
+        assert added_entry.status == "success"
+        assert added_entry.latency_ms == 10.0
+        assert added_entry.result_type == "scalar"
+        assert added_entry.result is None
+
+    async def test_log_prediction_model_not_found(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """When model_id is not in registry, log_prediction logs warning and returns."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = result_mock
+
+        await registry.log_prediction(
+            request_id=uuid.uuid4(),
+            model_id="unknown-model",
+            features={},
+            result=0.5,
+            result_type="scalar",
+            latency_ms=10.0,
+            status="success",
+            error_message=None,
+        )
+
+        mock_session.execute.assert_awaited()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_awaited()
+
+    async def test_log_prediction_db_error_does_not_propagate(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """A DB error inside log_prediction must be caught and not propagated."""
+        mock_session.execute.side_effect = Exception("DB connection lost")
+
+        # Must NOT raise — this is best-effort logging
+        await registry.log_prediction(
+            request_id=uuid.uuid4(),
+            model_id="iris-classifier",
+            features={},
+            result=0.5,
+            result_type="scalar",
+            latency_ms=10.0,
+            status="error",
+            error_message="timeout",
+        )
 
 
 # ── DI factory ──────────────────────────────────────────────────────────
