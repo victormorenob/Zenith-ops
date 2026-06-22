@@ -223,6 +223,78 @@ class PostgresModelRegistry:
             await session.refresh(entry)
             return self._to_metadata(entry)
 
+    async def register_and_build_model(
+        self,
+        name: str,
+        version: str,
+        framework: str,
+        model_type: str,
+        description: str = "",
+        metrics: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        input_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | None = None,
+    ) -> ModelMetadata:
+        """Register a model version AND generate its ``.joblib`` artifact.
+
+        This is a convenience for the common case where the client provides
+        a ``model_type`` (e.g. ``"dummy_iris"``) instead of a pre-built
+        artifact.  The method:
+
+        1. Builds the model instance via :func:`build_model`.
+        2. Serialises it to ``models/{name}/{version}/model.joblib``.
+        3. Delegates to :meth:`register_model` for the DB insert.
+
+        Parameters
+        ----------
+        name:
+            Model name.
+        version:
+            Semantic version string.
+        framework:
+            ML framework label.
+        model_type:
+            Key into the model builders registry.
+        description:
+            Human-readable description.
+        metrics, tags, input_schema, output_schema:
+            Forwarded to :meth:`register_model`.
+
+        Returns
+        -------
+        ModelMetadata from the newly created DB row.
+
+        Raises
+        ------
+        ValueError
+            If *model_type* is unknown.
+        DuplicateModelError
+            If ``(name, version)`` already exists.
+        """
+        from pathlib import Path
+
+        import joblib
+
+        from zenith_ops.core.model_builders import build_model
+
+        model_obj = build_model(model_type)
+        models_dir = Path("models") / name / version
+        models_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = str(models_dir / "model.joblib")
+        joblib.dump(model_obj, artifact_path)
+
+        return await self.register_model(
+            name=name,
+            version=version,
+            framework=framework,
+            artifact_path=artifact_path,
+            description=description,
+            metrics=metrics,
+            tags=tags,
+            input_schema=input_schema,
+            output_schema=output_schema,
+        )
+
     # ── Mapping helpers ─────────────────────────────────────────────────
 
     @staticmethod

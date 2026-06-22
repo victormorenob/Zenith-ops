@@ -335,6 +335,58 @@ class TestUpdateStatus:
             )
 
 
+# ── C.Extra: register_and_build_model ──────────────────────────────────
+
+
+class TestRegisterAndBuildModel:
+    """register_and_build_model generates a .joblib from model_type."""
+
+    async def test_calls_build_and_register(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """register_and_build_model builds model, dumps it, and calls register_model."""
+        # Arrange: duplicate check returns None, refresh populates id
+        none_result = MagicMock()
+        none_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = none_result
+
+        def _refresh_side_effect(obj) -> None:
+            obj.id = "550e8400-e29b-41d4-a716-446655440000"
+            obj.created_at = datetime(2026, 6, 22, 12, 0, 0, tzinfo=UTC)
+
+        mock_session.refresh.side_effect = _refresh_side_effect
+
+        metadata = await registry.register_and_build_model(
+            name="new-model",
+            version="1.0.0",
+            framework="sklearn",
+            model_type="dummy_iris",
+            description="Built from model_type",
+            metrics={"accuracy": 0.99},
+            tags=["auto"],
+        )
+
+        assert metadata.name == "new-model"
+        assert metadata.version == "1.0.0"
+        assert metadata.status == "staging"
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+
+    async def test_unknown_model_type_raises_value_error(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """An unknown model_type must propagate ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError, match="desconocido"):
+            await registry.register_and_build_model(
+                name="bad-model",
+                version="1.0.0",
+                framework="sklearn",
+                model_type="nonexistent_type",
+            )
+
+
 # ── DI factory ──────────────────────────────────────────────────────────
 
 
