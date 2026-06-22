@@ -17,7 +17,7 @@ setup:
 # ── Desarrollo ────────────────────────────────────────────
 # Levanta el stack completo en local
 start:
-    docker compose -f infra/docker/docker-compose.dev.yml up -d
+    docker compose -f infra/docker/docker-compose.dev.yml --profile dev up -d
     @echo "🚀 Stack local levantado"
 
 # Para el stack local
@@ -69,6 +69,18 @@ rollback:
 db-reset:
     uv run alembic downgrade base
     uv run alembic upgrade head
+
+# ── Init ──────────────────────────────────────────────────
+# Build + run del init container (seed + migrate)
+build-init:
+    docker compose -f infra/docker/docker-compose.dev.yml build init
+
+run-init:
+    docker compose -f infra/docker/docker-compose.dev.yml run init
+
+# Genera el modelo dummy en local (sin Docker)
+seed:
+    uv run python scripts/generate_dummy_model.py
 
 # ── Docker ────────────────────────────────────────────────
 # Construye la imagen de producción

@@ -5,7 +5,7 @@ RUN pip install uv==0.11.11
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Stage 2: Runtime
 FROM python:3.12-slim AS runtime

@@ -4,7 +4,6 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from importlib.metadata import version
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -14,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from zenith_ops.core.settings import Settings
 from zenith_ops.services.predictor import InferenceService
 
-_Version = version("zenith-ops")
+_Version = "0.1.0"
 
 
 def get_version() -> str:
