@@ -1,0 +1,1 @@
+--8<-- "../../openspec/specs/error-handling/spec.md"

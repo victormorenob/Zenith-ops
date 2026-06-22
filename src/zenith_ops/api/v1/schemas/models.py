@@ -43,13 +43,9 @@ class RegisterModelRequest(BaseModel):
     def check_exclusive(self) -> RegisterModelRequest:
         """Validate that exactly one of model_type / artifact_path is set."""
         if self.model_type and self.artifact_path:
-            raise ValueError(
-                "model_type y artifact_path son mutuamente excluyentes"
-            )
+            raise ValueError("model_type y artifact_path son mutuamente excluyentes")
         if not self.model_type and not self.artifact_path:
-            raise ValueError(
-                "Debe proporcionar model_type o artifact_path"
-            )
+            raise ValueError("Debe proporcionar model_type o artifact_path")
         return self
 
 
