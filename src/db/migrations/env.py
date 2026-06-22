@@ -6,7 +6,7 @@ from typing import Any
 
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
-
+from sqlalchemy import NullPool
 from zenith_ops.core.settings import Settings
 from zenith_ops.db.base import Base
 
@@ -43,7 +43,7 @@ async def run_async_migrations() -> None:
     """Run migrations in 'online' async mode."""
     settings = Settings()  # type: ignore[call-arg]
     url = str(settings.DATABASE_URL)
-    connectable = create_async_engine(url, poolclass=False)
+    connectable = create_async_engine(url, poolclass=NullPool)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
