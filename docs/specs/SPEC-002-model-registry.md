@@ -1,0 +1,1 @@
+--8<-- "../../openspec/specs/model-registry/spec.md"

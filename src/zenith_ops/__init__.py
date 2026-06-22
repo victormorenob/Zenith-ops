@@ -18,6 +18,7 @@ from zenith_ops.api.v1.models import router as models_router
 from zenith_ops.api.v1.predict import router as predict_router
 from zenith_ops.api.v1.test_feature import router as feature_router
 from zenith_ops.core.exceptions import (
+    DuplicateModelError,
     InferenceError,
     InferenceTimeoutError,
     ModelNotFoundError,
@@ -39,6 +40,18 @@ app = FastAPI(
 # ──────────────────────────────────────────────────────────────
 # Global exception handlers — map domain exceptions to HTTP codes
 # ──────────────────────────────────────────────────────────────
+
+
+# DuplicateModelError -> 409 (conflict — resource already exists)
+# Client tried to register a (name, version) pair that is already in the DB.
+@app.exception_handler(DuplicateModelError)
+async def duplicate_model_handler(
+    request: Request, exc: DuplicateModelError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"error": "duplicate_model", "message": str(exc)},
+    )
 
 
 # ModelNotFoundError -> 404 (resource doesn't exist)

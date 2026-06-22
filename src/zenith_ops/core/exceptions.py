@@ -7,6 +7,15 @@ class Zenitherror(Exception):
     pass
 
 
+class DuplicateModelError(Zenitherror):
+    """Raised when a model with the same (name, version) already exists."""
+
+    def __init__(self, name: str, version: str) -> None:
+        self.name = name
+        self.version = version
+        super().__init__(f"Duplicate model: {name} (version {version})")
+
+
 class ModelNotFoundError(Zenitherror):
     """Raised when the requested model_id is not found."""
 

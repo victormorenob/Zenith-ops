@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from zenith_ops.core.settings import Settings
 from zenith_ops.db.base import Base
+from zenith_ops.db.models import (  # noqa: F401 — register models on Base.metadata
+    ModelRegistryEntry,
+    PredictionMetadata,
+)
 
 config = context.config
 
