@@ -88,6 +88,14 @@ build:
     docker build -f infra/docker/Dockerfile -t ZenithOps-engine:local .
     docker image ls ZenithOps-engine:local
 
+# Construye imágenes app + migrate para docker-compose.prod.yml
+build-prod:
+    docker compose -f infra/docker/docker-compose.prod.yml build app migrate
+
+# Levanta stack de producción (requiere PostgreSQL en host + .env)
+up-prod:
+    docker compose -f infra/docker/docker-compose.prod.yml up -d
+
 # ── Limpieza ──────────────────────────────────────────────
 # Elimina artefactos de build y caché
 clean:

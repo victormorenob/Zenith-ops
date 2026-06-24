@@ -1,0 +1,91 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  build-and-push:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set GHCR image prefix
+        run: echo "IMAGE_PREFIX=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/zenith-ops-app:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/zenith-ops-app:latest
+
+      - name: Build and push migrate image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/migrate.Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/zenith-ops-migrate:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/zenith-ops-migrate:latest
+
+  deploy:
+    needs: build-and-push
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Set GHCR owner (lowercase)
+        run: echo "GHCR_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/zenith-ops
+            export IMAGE_TAG="${{ env.IMAGE_TAG }}"
+            export GHCR_OWNER="${{ env.GHCR_OWNER }}"
+            docker compose -f infra/docker/docker-compose.prod.yml pull migrate app
+            docker compose -f infra/docker/docker-compose.prod.yml up migrate
+            docker compose -f infra/docker/docker-compose.prod.yml up -d app
