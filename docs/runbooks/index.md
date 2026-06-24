@@ -6,6 +6,7 @@ Procedimientos operativos para tareas comunes del proyecto.
 
 | Runbook | Descripción |
 |---------|-------------|
+| [deploy-production.md](deploy-production.md) | Despliegue en VPS: PostgreSQL host, CD, health checks y rollback |
 | *(pendiente)* | Migraciones de base de datos |
 | *(pendiente)* | Despliegue local con Docker Compose |
 | *(pendiente)* | Resolución de problemas comunes |
