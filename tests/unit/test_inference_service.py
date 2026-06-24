@@ -1,10 +1,14 @@
 """Unit tests for InferenceService.
 
-Tests cover cache behavior, error handling, timeout, and latency measurement.
+Tests cover cache behavior, error handling, timeout, latency measurement, and
+best-effort prediction metadata logging.
 """
 
+import asyncio
 import json
 import time
+import uuid
+from collections.abc import Callable, Coroutine, Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,9 +26,33 @@ from zenith_ops.services.predictor import InferenceService, ResultType
 
 
 @pytest.fixture(autouse=True)
-def reset_cache() -> None:
-    """Reset the class-level model cache before each test."""
+def reset_service_state() -> Generator[None, None, None]:
+    """Reset class-level service state before and after each test."""
     InferenceService._models.clear()
+    InferenceService._registry = None
+    InferenceService._idempotency_cache.clear()
+    yield
+    InferenceService._models.clear()
+    InferenceService._registry = None
+    InferenceService._idempotency_cache.clear()
+
+
+def _capture_created_tasks() -> tuple[
+    list[asyncio.Task[None]],
+    Callable[[Coroutine[object, object, None]], asyncio.Task[None]],
+]:
+    """Return a create_task replacement that records scheduled tasks."""
+    original_create_task = asyncio.create_task
+    created_tasks: list[asyncio.Task[None]] = []
+
+    def capture_create_task(
+        coroutine: Coroutine[object, object, None],
+    ) -> asyncio.Task[None]:
+        task = original_create_task(coroutine)
+        created_tasks.append(task)
+        return task
+
+    return created_tasks, capture_create_task
 
 
 class TestCacheMiss:
@@ -161,6 +189,111 @@ class TestInferenceError:
                 model_id="broken-model",
                 features={"sepal_length": 5.1},
             )
+
+
+class TestPredictionMetadataLogging:
+    """Prediction metadata logging is scheduled as a best-effort side effect."""
+
+    async def test_successful_predict_schedules_success_metadata_log(self) -> None:
+        """A successful prediction logs status='success' with inference details."""
+        # Arrange
+        model = MagicMock()
+        model.predict.return_value = 0.5
+        mock_registry = MagicMock()
+        mock_registry.log_prediction = AsyncMock()
+        InferenceService._registry = mock_registry
+        created_tasks, capture_create_task = _capture_created_tasks()
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_load_model",
+                new_callable=AsyncMock,
+                return_value=model,
+            ),
+            patch("asyncio.create_task", side_effect=capture_create_task),
+        ):
+            result, result_type, latency = await InferenceService.predict(
+                model_id="iris-classifier",
+                features={"sepal_length": 5.1},
+            )
+            await created_tasks[0]
+
+        # Assert
+        assert result == 0.5
+        assert result_type == ResultType.SCALAR
+        assert latency > 0
+        mock_registry.log_prediction.assert_awaited_once()
+        log_kwargs = mock_registry.log_prediction.await_args.kwargs
+        assert isinstance(log_kwargs["request_id"], uuid.UUID)
+        assert log_kwargs["model_id"] == "iris-classifier"
+        assert log_kwargs["features"] == {"sepal_length": 5.1}
+        assert log_kwargs["result"] == 0.5
+        assert log_kwargs["result_type"] == ResultType.SCALAR
+        assert log_kwargs["status"] == "success"
+        assert log_kwargs["error_message"] is None
+        assert isinstance(log_kwargs["latency_ms"], float)
+
+    async def test_inference_error_schedules_error_metadata_log(self) -> None:
+        """A model failure logs status='error' before raising InferenceError."""
+        # Arrange
+        broken_model = MagicMock()
+        broken_model.predict = MagicMock(side_effect=ValueError("bad features"))
+        mock_registry = MagicMock()
+        mock_registry.log_prediction = AsyncMock()
+        InferenceService._registry = mock_registry
+        created_tasks, capture_create_task = _capture_created_tasks()
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_get_model",
+                new_callable=AsyncMock,
+                return_value=broken_model,
+            ),
+            patch("asyncio.create_task", side_effect=capture_create_task),
+            pytest.raises(InferenceError, match="Model failed during inference"),
+        ):
+            await InferenceService.predict(
+                model_id="iris-classifier",
+                features={"sepal_length": 5.1},
+            )
+        await created_tasks[0]
+
+        # Assert
+        mock_registry.log_prediction.assert_awaited_once()
+        log_kwargs = mock_registry.log_prediction.await_args.kwargs
+        assert isinstance(log_kwargs["request_id"], uuid.UUID)
+        assert log_kwargs["model_id"] == "iris-classifier"
+        assert log_kwargs["features"] == {"sepal_length": 5.1}
+        assert log_kwargs["result"] is None
+        assert log_kwargs["result_type"] is None
+        assert log_kwargs["status"] == "error"
+        assert log_kwargs["error_message"] == "inference_failed"
+        assert isinstance(log_kwargs["latency_ms"], float)
+
+    async def test_safe_log_prediction_swallows_registry_errors(self) -> None:
+        """A metadata DB failure must not propagate to the prediction flow."""
+        # Arrange
+        mock_registry = MagicMock()
+        mock_registry.log_prediction = AsyncMock(side_effect=RuntimeError("db down"))
+        InferenceService._registry = mock_registry
+
+        # Act
+        await InferenceService._safe_log_prediction(
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+            result=0.5,
+            result_type=ResultType.SCALAR,
+            latency_ms=1.0,
+            status="success",
+            error_message=None,
+        )
+
+        # Assert
+        mock_registry.log_prediction.assert_awaited_once()
 
 
 class TestResultType:
