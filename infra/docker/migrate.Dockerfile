@@ -7,20 +7,16 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Stage 2: Runtime
+# Stage 2: Runtime — Alembic migrations only (no seed scripts)
 FROM python:3.12-slim AS runtime
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system --gid 1000 app \
+RUN addgroup --system --gid 1000 app \
     && adduser --system --uid 1000 app
 
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY src/ ./src/
-COPY models/ ./models/
 COPY alembic.ini ./
 COPY src/db/migrations/ ./src/db/migrations/
 
@@ -29,9 +25,4 @@ ENV PYTHONPATH="/app/src:$PYTHONPATH"
 
 USER app
 
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --start-period=40s --timeout=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health/live || exit 1
-
-CMD ["uvicorn", "zenith_ops.__init__:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["alembic", "upgrade", "head"]
