@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from zenith_ops.core.settings import Settings
 
 
@@ -144,8 +145,9 @@ class TestEnrichEventWithCorrelationId:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Arrange
-        from structlog.contextvars import bind_contextvars, clear_contextvars
         from zenith_ops.core.sentry_config import _enrich_event_with_correlation_id
+
+        from structlog.contextvars import bind_contextvars, clear_contextvars
 
         bind_contextvars(correlation_id="abc-123")
         event: dict[str, object] = {}
