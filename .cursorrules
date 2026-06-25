@@ -37,20 +37,30 @@ Nunca añades funcionalidad que no esté explícitamente en la Spec.
 
 ```
 src/
-  api/v1/        ← Routers FastAPI + modelos Pydantic request/response
-  core/          ← Lógica de negocio pura (sin FastAPI)
-  db/            ← Modelos SQLAlchemy, queries, conexión, migrations/
-  monitoring/    ← Métricas Prometheus, drift
-  training/      ← Entrenamiento y MLflow
+  db/migrations/           ← Alembic (alembic.ini → script_location); NO ORM aquí
+  monitoring/.gitkeep      ← Placeholder Fase 2+ (métricas Prometheus, drift)
+  training/.gitkeep        ← Placeholder Fase 2+ (entrenamiento, MLflow)
+  zenith_ops/              ← Paquete instalable
+    api/
+      schemas/             ← Schemas Pydantic compartidos (p. ej. predict)
+      v1/                  ← Routers FastAPI + schemas request/response
+    core/                  ← Lógica de negocio pura (sin FastAPI)
+    db/                    ← ORM SQLAlchemy (base, session, models/); SIN migraciones
+    services/              ← Servicios de aplicación (p. ej. predictor)
 tests/
-  unit/          ← Sin I/O externo; mocks
-  integration/   ← Servicios reales (p. ej. PostgreSQL)
+  unit/                    ← Sin I/O externo; mocks
+  integration/             ← Servicios reales (p. ej. PostgreSQL)
 docs/
-  adr/           ← ADRs
-  specs/         ← Feature specs (fuente de verdad)
+  adr/                     ← ADRs
+  specs/                   ← Feature specs (fuente de verdad)
   runbooks/
-  context/       ← Contexto denso para la IA (@ en Cursor)
+  context/                 ← Contexto denso para la IA (@ en Cursor)
+infra/
+  docker/                  ← Dockerfile, docker-compose
+openspec/                  ← Artefactos SDD (changes/, specs/)
 ```
+
+**Nota:** ORM en `zenith_ops/db/`; migraciones Alembic en `src/db/migrations/` (rutas distintas a propósito).
 
 Nunca crear archivos fuera de esta estructura sin avisar explícitamente.
 
@@ -73,10 +83,10 @@ Nunca crear archivos fuera de esta estructura sin avisar explícitamente.
 
 ### Separación de responsabilidades
 
-- `api/v1/`: sin lógica de negocio; solo validación Pydantic, orquestación, mapeo HTTP
-- `core/`: negocio; no importar FastAPI
-- `db/`: persistencia; no importar FastAPI
-- Servicios vía `Depends()`, nunca instanciados dentro del endpoint
+- `zenith_ops/api/v1/`: sin lógica de negocio; solo validación Pydantic, orquestación, mapeo HTTP
+- `zenith_ops/core/`: negocio; no importar FastAPI
+- `zenith_ops/db/`: ORM y persistencia; no importar FastAPI; sin migraciones (están en `src/db/migrations/`)
+- `zenith_ops/services/`: orquestación de aplicación (inferencia, etc.); inyectados vía `Depends()`, nunca instanciados dentro del endpoint
 
 ### Async
 

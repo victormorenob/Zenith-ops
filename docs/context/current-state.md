@@ -1,4 +1,4 @@
-# Estado actual del proyecto — 2026-05-11
+# Estado actual del proyecto — 2026-06-25
 
 **Nota (2026-05-14):** el repositorio quedó en una sola raíz (`pyproject.toml` y `Justfile` al mismo nivel); se eliminó la carpeta duplicada `Zenith-ops/Zenith-ops/`.
 
@@ -9,17 +9,40 @@
 - [x] `.cursorrules` y reglas por carpeta `.cursor/rules/*.mdc`
 - [x] Memory Bank: `docs/context/*`, plantilla y SPEC-000 en `docs/specs/`
 - [x] Ajustes de workspace en `.vscode/settings.json` (editor, Ruff, intérprete `.venv`)
+- [x] Paquete instalable `zenith_ops` bajo `src/zenith_ops/` (`api/`, `core/`, `db/`, `services/`)
+- [x] API Fase 1: `POST /v1/predict`, health checks (`/health/live`, `/health/ready`), model registry CRUD
+- [x] Model Registry persistido en PostgreSQL (SQLAlchemy 2.0 async + artefactos `.joblib` en disco)
+- [x] Migraciones Alembic en `src/db/migrations/` (ORM en `zenith_ops/db/`, rutas separadas)
+- [x] CI/CD: GitHub Actions → deploy en VPS Hetzner (producción en `http://167.233.116.195:8000`)
+- [x] Docker multi-stage (`infra/docker/`) con compose dev y prod
 
 ## En progreso
 
-- [ ] Estructura de código `src/api`, `src/core`, `src/db` según Specs
-- [ ] Primera API vertical (serving / health) acordada en Spec
+- [ ] Fase 2+: MLflow, observabilidad (Prometheus/Grafana/Loki), drift (Evidently AI)
+- [ ] Placeholders `src/monitoring/` y `src/training/` — sin código aún
 
 ## Pendiente (roadmap orientativo)
 
-- [ ] Fase 1: Model Serving API completa según Specs
-- [ ] Fase 1: Model Registry persistido
-- [ ] Fase 2+: MLflow, observabilidad, drift (según ADRs)
+- [ ] Fase 3: Kubernetes + Helm + Terraform (`infra/helm/`, `infra/terraform/` — placeholders)
+- [ ] Idempotencia con Redis (hoy in-memory, se pierde al reiniciar)
+
+## Estructura canónica (resumen)
+
+```
+src/
+├── db/migrations/          ← Alembic
+├── monitoring/.gitkeep     ← Fase 2+, no implementado
+├── training/.gitkeep       ← Fase 2+, no implementado
+└── zenith_ops/             ← paquete instalable
+    ├── api/ (schemas/, v1/)
+    ├── core/ (registry, settings, exceptions, logging, sentry)
+    ├── db/ (ORM: base, session, models/)   ← sin migraciones aquí
+    └── services/ (predictor.py)
+tests/unit/, tests/integration/
+docs/adr/, docs/context/, docs/specs/, docs/runbooks/
+infra/docker/
+openspec/
+```
 
 ## Dependencias
 
@@ -27,6 +50,7 @@ Ver `[project]` y `[dependency-groups]` en `pyproject.toml`.
 
 ## Notas para la IA
 
-- El paquete instalable actual es `zenith_ops` bajo `src/`; la guía SDD describe layout `api/v1`, `core`, `db` como objetivo: seguir la Spec activa para rutas concretas.
-- Los tests pueden estar aún mínimos: crear casos según criterios de aceptación de cada Spec.
-- La base de datos se configura con `DATABASE_URL` (ver `.env.example`); hasta que haya migraciones y Spec, no asumir tablas concretas.
+- ORM en `zenith_ops/db/`; migraciones Alembic en `src/db/migrations/` (`alembic.ini` apunta a `script_location` allí).
+- `InferenceService` vive en `zenith_ops/services/predictor.py` (no en `core/`).
+- `src/monitoring/` y `src/training/` son placeholders Fase 2+; no asumir código allí.
+- La base de datos se configura con `DATABASE_URL` (ver `.env.example`); tablas: model registry y prediction metadata (ver migraciones).
