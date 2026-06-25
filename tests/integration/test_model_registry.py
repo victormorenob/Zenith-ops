@@ -1,13 +1,15 @@
 """Integration tests for GET /v1/models endpoints.
 
-Uses TestClient against the real FastAPI app with exception handlers.
-Requires the versioned model directory structure seeded by conftest.
+Uses TestClient against the real FastAPI app with a PostgreSQL-backed
+registry seeded by ``tests/integration/conftest.py``.
 """
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
-
 from zenith_ops import app
+
+pytestmark = pytest.mark.postgres
 
 client = TestClient(app)
 
@@ -24,7 +26,7 @@ def test_list_models_returns_200() -> None:
     assert model["model_id"] == "iris-classifier"
     assert model["latest_version"] == "1.0.0"
     assert model["framework"] == "sklearn"
-    assert model["status"] == "active"
+    assert model["status"] == "staging"
 
 
 def test_get_model_returns_metadata() -> None:
@@ -35,7 +37,7 @@ def test_get_model_returns_metadata() -> None:
     assert body["model_id"] == "iris-classifier"
     assert body["version"] == "1.0.0"
     assert body["framework"] == "sklearn"
-    assert body["status"] == "active"
+    assert body["status"] == "staging"
     assert "created_at" in body
     assert body["tags"] == ["classification", "iris", "multiclass"]
 
