@@ -15,6 +15,7 @@
 - [x] Migraciones Alembic en `src/db/migrations/` (ORM en `zenith_ops/db/`, rutas separadas)
 - [x] CI/CD: GitHub Actions → deploy en VPS Hetzner (producción en `http://167.233.116.195:8000`)
 - [x] Docker multi-stage (`infra/docker/`) con compose dev y prod
+- [x] Sentry error tracking (DSN opcional, `correlation_id` tag, middleware catch-all)
 
 ## En progreso
 
