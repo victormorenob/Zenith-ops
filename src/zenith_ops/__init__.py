@@ -25,10 +25,13 @@ from zenith_ops.core.exceptions import (
     Zenitherror,
 )
 from zenith_ops.core.logging_config import configure_logging
+from zenith_ops.core.sentry_config import capture_exception, configure_sentry
+from zenith_ops.core.settings import Settings
 
 # ── Configure structured logging before the app is created ────────────
 # This ensures the structlog pipeline is active before any request arrives.
 configure_logging()
+configure_sentry(Settings())  # type: ignore[call-arg]
 
 app = FastAPI(
     title="Zenith-ops ML Serving",
@@ -182,15 +185,19 @@ async def catch_all(
     """
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception as exc:
+        correlation_id = getattr(request.state, "correlation_id", None)
+        if correlation_id is not None:
+            bind_contextvars(correlation_id=correlation_id)
         logger = structlog.get_logger("zenith_ops.middleware")
         logger.error(
             "unhandled_exception",
             method=request.method,
             endpoint=request.url.path,
-            correlation_id=getattr(request.state, "correlation_id", "unassigned"),
+            correlation_id=correlation_id or "unassigned",
             exc_info=True,
         )
+        capture_exception(exc)
         response = JSONResponse(
             status_code=500,
             content={

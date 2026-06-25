@@ -16,3 +16,13 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = (
         "INFO"  # Default log level; logging_config reads os.environ directly
     )
+
+    # Sentry (optional — leave SENTRY_DSN empty to disable)
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
+    @property
+    def sentry_enabled(self) -> bool:
+        """Return ``True`` when a non-empty Sentry DSN is configured."""
+        return bool(self.SENTRY_DSN.strip())
