@@ -8,17 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Generator
 
 # TestClient runs the app on a different event loop than asyncio.run() setup.
 # NullPool must be set before zenith_ops.db.session creates the engine.
 if os.environ.get("DATABASE_URL"):
     os.environ["ZENITH_OPS_DB_NULL_POOL"] = "1"
 
-from collections.abc import Generator
-
 import pytest
 from sqlalchemy import delete, text
 from sqlalchemy.exc import OperationalError
+
 from zenith_ops.core.exceptions import DuplicateModelError
 from zenith_ops.core.model_registry_db import PostgresModelRegistry
 from zenith_ops.db.models.model_registry import ModelRegistryEntry

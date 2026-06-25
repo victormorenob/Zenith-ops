@@ -7,6 +7,7 @@ registry seeded by ``tests/integration/conftest.py``.
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+
 from zenith_ops import app
 
 pytestmark = pytest.mark.postgres
