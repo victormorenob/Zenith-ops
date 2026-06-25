@@ -1,11 +1,12 @@
 # SPEC-005: Prediction Metadata — Trazabilidad de Predicciones
 
-**Estado:** Por implementar (fase 2)
+**Domain:** prediction-metadata
+**Estado:** Implementado
 **Backend:** PostgreSQL vía `prediction_metadata` table
 
 ---
 
-## Propósito
+## Purpose
 
 Cada llamada a `/v1/predict` DEBE registrar una fila en `prediction_metadata`. Esto permite auditar predicciones, medir latencia, diagnosticar errores, y correlacionar resultados con la versión del modelo que los generó.
 
@@ -33,10 +34,54 @@ Cada llamada a `/v1/predict` DEBE registrar una fila en `prediction_metadata`. E
 
 ---
 
-## Relaciones
+## Requirements
 
-- `prediction_metadata.model_id` → FK a `model_registry.id`. La FK usa ON DELETE RESTRICT: no se puede eliminar un modelo que tenga predicciones asociadas
-- `request_id` es único para garantizar idempotencia: si el cliente retry el mismo request_id, no se DUPLICA la fila
+### Requirement: PredictionMetadata table
+
+El sistema DEBE crear la tabla `prediction_metadata` con UUID PK, `request_id` UNIQUE, FK a `model_registry(id)`, y columnas para latencia, preview y error.
+
+#### Scenario: Inserción exitosa tras predicción
+
+- DADO una predicción exitosa con `request_id`, `model_name` y `model_version` conocidos
+- CUANDO se completa la predicción
+- ENTONCES se inserta una fila en `prediction_metadata` con `status='success'` y `latency_ms` > 0
+
+#### Scenario: Error capturado en metadata
+
+- DADO una predicción que falla (ej: modelo no cargado, input inválido)
+- CUANDO ocurre el error
+- ENTONCES se inserta una fila con `status='error'` y `error_message` descriptivo
+
+### Requirement: Idempotencia por request_id
+
+El sistema DEBE garantizar que el mismo `request_id` no genere filas duplicadas.
+
+#### Scenario: Retry con mismo request_id
+
+- DADO una predicción existente con `request_id = X`
+- CUANDO se recibe una nueva solicitud con `request_id = X`
+- ENTONCES no se inserta una segunda fila (UNIQUE constraint previene duplicado)
+
+### Requirement: Best-effort logging
+
+La metadata NO DEBE interrumpir la predicción si la DB falla.
+
+#### Scenario: DB caída no detiene la predicción
+
+- DADO que PostgreSQL no responde
+- CUANDO se ejecuta una predicción
+- ENTONCES la predicción se completa exitosamente
+- Y se loguea un warning de que la metadata no se pudo persistir
+
+### Requirement: FK constraint ON DELETE RESTRICT
+
+El sistema DEBE impedir eliminar un modelo referenciado por `prediction_metadata`.
+
+#### Scenario: Borrado de modelo con predicciones → error
+
+- DADO un modelo con filas en `prediction_metadata`
+- CUANDO se intenta eliminar ese modelo
+- ENTONCES la DB lanza FK violation y el sistema devuelve 409
 
 ---
 
@@ -63,17 +108,13 @@ El sistema DEBE:
 - **request_id duplicado:** si ya existe, la inserción es un no-op (el UNIQUE constraint evita duplicados). El sistema PUEDE loguear un debug
 - **model_id huérfano:** la FK previene que se elimine un modelo referenciado. Si se intenta, DB lanza FK violation → el sistema DEBE devolver 409
 
-### Idempotencia
-
-`request_id` con UNIQUE constraint garantiza que reintentos del mismo request no generen filas duplicadas. Si el cliente envía el mismo `request_id`, el INSERT falla silenciosamente (no-op para metadata, la predicción se ejecuta igual).
-
 ---
 
 ## Criterios de aceptación
 
-- [ ] Cada predicción exitosa genera una fila en `prediction_metadata` con `status='success'`
-- [ ] Cada predicción con error genera una fila con `status='error'` y `error_message` poblado
-- [ ] `request_id` único previene duplicados en reintentos
-- [ ] Si la DB no responde, la predicción continúa (metadata es best-effort)
-- [ ] FK a `model_registry.id` impide borrar modelos con predicciones
-- [ ] `latency_ms` se registra correctamente
+- [x] Cada predicción exitosa genera una fila en `prediction_metadata` con `status='success'`
+- [x] Cada predicción con error genera una fila con `status='error'` y `error_message` poblado
+- [x] `request_id` único previene duplicados en reintentos
+- [x] Si la DB no responde, la predicción continúa (metadata es best-effort)
+- [x] FK a `model_registry.id` impide borrar modelos con predicciones
+- [x] `latency_ms` se registra correctamente

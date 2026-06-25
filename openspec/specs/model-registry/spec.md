@@ -1,162 +1,133 @@
-# SPEC-002: Model Registry v1 — File-Based Catalog
+# SPEC-002: Model Registry v2 — PostgreSQL Backend
 
+**Domain:** model-registry
 **Estado:** Implementado
-**Fase:** 1
-**Objetivo:** 1.1
+**Fase:** 2
+**Objetivo:** Migración file-based → PostgreSQL
 
 ---
 
-## Contexto
+## Purpose
 
-Actualmente los modelos se resuelven con `joblib.load(f"models/{model_id}.joblib")` — un path plano sin metadata, versionado, ni posibilidad de descubrimiento. No hay forma de preguntarle al sistema "qué modelos tenés?" ni "qué versión está activa?".
-
-Un Model Registry es el estándar de la industria (MLflow, Sagemaker, ML Metadata) y resuelve:
-- **Descubrimiento**: listar modelos disponibles con sus metadatos
-- **Versionado**: múltiples versiones del mismo modelo con promoción (active/staging/archived)
-- **Auto-documentación**: input_schema y output_schema le dicen al cliente cómo usar el modelo
-- ** trazabilidad**: metrics, framework, created_at para auditoría
+El Model Registry es la fuente de verdad para modelos ML: descubrimiento, versionado, promoción de status y resolución de artifacts. A partir de esta versión el backend es PostgreSQL (`model_registry` table) con artifacts `.joblib` en disco referenciados por `artifact_path`. `PostgresModelRegistry` implementa el Protocol async; `FileBasedModelRegistry` permanece deprecated para tests unitarios sin DB.
 
 ---
 
-## Contrato
+## Requirements
 
-### GET /v1/models
+### Requirement: GET /v1/models (DB-backed)
 
-Lista todos los modelos registrados, mostrando la **última versión** de cada uno.
+El sistema DEBE listar modelos desde PostgreSQL, manteniendo el mismo response shape. La última versión se determina por `created_at DESC` agrupado por `name`.
 
-**Método:** GET
-**Endpoint:** `/v1/models`
+#### Scenario: Listado con modelos registrados
 
-**Response (200):**
+- DADO que existen modelos en `model_registry` con status `'staging'` y `'production'`
+- CUANDO se envía GET /v1/models
+- ENTONCES se devuelve 200 con `{"models": [...]}`
+- Y cada entry tiene `model_id: <name>`, `status: staging|production|archived`
 
-```json
-{
-  "models": [
-    {
-      "model_id": "iris-classifier",
-      "name": "Iris Classifier",
-      "latest_version": "1.0.0",
-      "framework": "sklearn",
-      "status": "active",
-      "created_at": "2026-06-15T12:00:00Z",
-      "tags": ["classification", "iris", "multiclass"]
-    }
-  ]
-}
-```
+#### Scenario: Sin modelos
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `models` | `array` | Lista de modelos, cada uno representa la última versión |
+- DADO que `model_registry` está vacío
+- CUANDO se envía GET /v1/models
+- ENTONCES se devuelve 200 con `{"models": []}`
 
-### GET /v1/models/{model_id}
+#### Scenario: Solo muestra última versión por name
 
-Devuelve el detalle completo del modelo (última versión activa).
+- DADO que existen dos versiones de `iris-classifier` (1.0.0 y 2.0.0)
+- CUANDO se envía GET /v1/models
+- ENTONCES solo aparece la versión más reciente (2.0.0) en la lista
 
-**Método:** GET
-**Endpoint:** `/v1/models/{model_id}`
+### Requirement: GET /v1/models/{model_id} (name lookup)
 
-**Response (200):**
+El sistema DEBE resolver `{model_id}` contra la columna `name` en DB. Última versión por `created_at DESC`.
 
-```json
-{
-  "model_id": "iris-classifier",
-  "name": "Iris Classifier",
-  "version": "1.0.0",
-  "framework": "sklearn",
-  "description": "Clasificador para especies de Iris (setosa, versicolor, virginica)",
-  "created_at": "2026-06-15T12:00:00Z",
-  "metrics": {
-    "accuracy": 0.97,
-    "f1_score": 0.96
-  },
-  "status": "active",
-  "tags": ["classification", "iris", "multiclass"],
-  "input_schema": {
-    "features": {
-      "sepal_length": "float",
-      "sepal_width": "float",
-      "petal_length": "float",
-      "petal_width": "float"
-    }
-  },
-  "output_schema": {
-    "type": "class",
-    "classes": ["setosa", "versicolor", "virginica"]
-  }
-}
-```
+#### Scenario: Modelo encontrado por name
 
-### Errores
+- DADO un modelo con `name='iris-classifier'` en DB
+- CUANDO se envía GET /v1/models/iris-classifier
+- ENTONCES se devuelve 200 con metadata completa y status `staging|production|archived`
 
-| Caso | Código | Respuesta |
-|------|--------|-----------|
-| `model_id` no existe | 404 | `{"error": "model_not_found", "message": "No model found with id: unknown-model"}` |
-| Directorio `models/` no existe o vacío | 200 | `{"models": []}` (lista vacía, no error) |
+#### Scenario: Name no encontrado → 404
+
+- DADO que no existe un modelo con `name='unknown'`
+- CUANDO se envía GET /v1/models/unknown
+- ENTONCES se devuelve 404
+
+### Requirement: POST /v1/models/register
+
+El sistema DEBE exponer `POST /v1/models/register` que crea una fila en `model_registry` y devuelve 201 con el modelo creado.
+
+#### Scenario: Registro exitoso
+
+- DADO un payload válido con `name`, `version`, `framework`
+- CUANDO se envía POST /v1/models/register
+- ENTONCES se crea una fila en `model_registry` con status `'staging'`
+- Y se devuelve 201 con el modelo completo
+
+#### Scenario: Duplicado (name, version) → 409
+
+- DADO que ya existe un modelo con `name='iris'` y `version='1.0.0'`
+- CUANDO se envía POST /v1/models/register con los mismos valores
+- ENTONCES se devuelve 409 con `{"error": "duplicate_model"}`
+
+### Requirement: PATCH /v1/models/{id}/status
+
+El sistema DEBE exponer `PATCH /v1/models/{id}/status` que actualiza el status de un modelo por UUID.
+
+#### Scenario: Status actualizado exitosamente
+
+- DADO un modelo con UUID existente
+- CUANDO se envía PATCH con `{"status": "production"}`
+- ENTONCES se actualiza el status en DB y se devuelve 200
+- Y `updated_at` se actualiza a la hora actual
+
+#### Scenario: UUID inexistente → 404
+
+- DADO un UUID que no existe en `model_registry`
+- CUANDO se envía PATCH /v1/models/{uuid}/status
+- ENTONCES se devuelve 404
+
+### Requirement: Status semantics
+
+El sistema DEBE usar `'staging'`, `'production'`, `'archived'` como valores de status. El valor `'active'` ya no se usa.
+
+#### Scenario: Seed data mapea active → staging
+
+- DADO un registro legacy con status `'active'`
+- CUANDO se ejecuta la migración
+- ENTONCES `'active'` se mapea a `'staging'`
 
 ---
 
 ## Reglas de negocio
 
-1. **Última versión**: los endpoints de listado y detalle exponen siempre la última versión (semver) cuyo status sea `active`
-2. **Caché en startup**: el registry escanea `models/` una vez al arrancar la aplicación. Los cambios en disco requieren reinicio para reflejarse
-3. **Graceful degradation**: si un `meta.json` está corrupto o falta, se salta ese modelo y se loguea un warning — no se cae el startup
-4. **Path resolution**: `InferenceService` consulta al registry el path absoluto del artifact en vez del hardcoded `models/{model_id}.joblib`
-5. **Doble estrategia de singleton**: la API usa `get_registry()` (module-level con `Depends`), mientras que `InferenceService` usa `cls._registry` (class-level attribute con lazy init). Ambos apuntan al mismo `FileBasedModelRegistry`, pero la separación permite inyectar un registry distinto en tests sin afectar la API
-6. **Backward compatibility**: `model_id` sigue siendo la clave de identificación. El predict endpoint no cambia su contrato
-
----
-
-## Estructura de archivos propuesta
-
-```
-models/
-  iris-classifier/
-    1.0.0/
-      model.joblib
-      meta.json
-
-src/zenith_ops/
-├── api/v1/
-│   ├── models.py               # NUEVO: GET /v1/models, GET /v1/models/{id} con Depends(get_registry)
-│   └── predict.py              # Sin cambios funcionales
-├── core/
-│   ├── model_registry.py       # NUEVO: ModelMetadata, ModelSummary, ModelIOSchema, ModelRegistry (Protocol), FileBasedModelRegistry
-│   └── exceptions.py           # MODIFICADO: ModelNotFoundError (ya existía)
-├── services/
-│   └── predictor.py            # MODIFICADO: _load_model usa cls._registry en vez de path hardcodeado
-└── __init__.py                 # MODIFICADO: incluido models_router
-
-tests/
-├── unit/
-│   ├── test_model_registry.py  # NUEVO: ~14 tests del registry (scan, list, get, resolve, latest_active, etc.)
-│   └── test_inference_service.py  # MODIFICADO: TestModelInRegistry (test_model_in_registry, test_model_not_in_registry)
-└── integration/
-    └── test_model_registry.py  # NUEVO: tests de endpoints con TestClient
-```
+1. **Última versión**: listado y detalle exponen la versión más reciente por `name` (`created_at DESC`)
+2. **Backend DB**: cada query lee del pool de conexiones async; no hay file-scan en startup
+3. **Artifacts en disco**: `artifact_path` TEXT apunta al `.joblib`; no BYTEA en DB
+4. **Protocol async**: `list_models`, `get_model`, `resolve_path` son `async def`
+5. **Escrituras**: `register_model` y `update_status` viven en `PostgresModelRegistry`, no en el Protocol
+6. **Unicidad**: constraint `(name, version)` → `DuplicateModelError` → HTTP 409
+7. **Backward compatibility**: `model_id` en URL sigue siendo el `name` del modelo; predict endpoint sin cambios de contrato
+8. **DI**: API usa `get_registry()` con `Depends`; `InferenceService` usa `PostgresModelRegistry` por defecto
 
 ---
 
 ## Criterios de aceptación
 
-- [x] `GET /v1/models` con modelos registrados → 200 con lista de modelos
-- [x] `GET /v1/models` sin modelos → 200 con `{"models": []}`
-- [x] `GET /v1/models/iris-classifier` → 200 con metadata completa
-- [x] `GET /v1/models/unknown-model` → 404
-- [x] `POST /v1/predict` con model_id existente → 200 (backward compat)
-- [x] `POST /v1/predict` con model_id que no existe en registry → 404
-- [x] meta.json corrupto no rompe el startup
-- [x] `uv run pytest` → verde (80 tests)
-- [ ] `uv run mypy src/` → 0 errores
-- [ ] Cobertura > 70%
+- [x] GET /v1/models con modelos en DB → 200
+- [x] GET /v1/models sin modelos → 200 con lista vacía
+- [x] GET /v1/models/{name} → 200 / 404
+- [x] POST /v1/models/register → 201 / 409
+- [x] PATCH /v1/models/{id}/status → 200 / 404
+- [x] InferenceService usa `await resolve_path()` async
+- [x] `uv run pytest` verde, cobertura ≥70%
+- [x] `uv run mypy src/` 0 errores
 
 ---
 
-## Fuera de scope (Phase 1)
+## Fuera de scope
 
-- Endpoint POST para registrar modelos
-- Version listing (`GET /v1/models/{model_id}/versions`)
-- Status management (promover/archivar versiones)
-- Base de datos como backend
+- MLflow integration, version listing endpoint, model retraining
+- Eliminación de `FileBasedModelRegistry` (deprecated, mantenido para tests)
 - Autenticación en endpoints del registry
-- Validación de features contra `input_schema`

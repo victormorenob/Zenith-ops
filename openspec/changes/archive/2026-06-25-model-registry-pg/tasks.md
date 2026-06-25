@@ -66,8 +66,8 @@ Estrategia: **feature-branch-chain** via `feat/model-registry-pg` tracker branch
 
 ## Fase E: Seed + Tests
 
-- [ ] E.1 Hacer `scripts/generate_dummy_model.py` async (session async + INSERT + joblib.dump)
-- [ ] E.2 Escribir `tests/unit/test_postgres_model_registry.py` — mock AsyncSession, test CRUD + DuplicateModelError
-- [ ] E.3 Adaptar `tests/integration/test_model_registry.py` para DB real con TestClient
-- [ ] E.4 Adaptar `tests/integration/test_predict_endpoint.py` para DB-backed registry
-- [ ] E.5 Verificar suite completa: `pytest --cov=src --cov-report=term-missing -v && ruff check && mypy src/`
+- [x] E.1 Hacer `scripts/generate_dummy_model.py` async (session async + INSERT + joblib.dump)
+- [x] E.2 Escribir `tests/unit/test_postgres_model_registry.py` — mock AsyncSession, test CRUD + DuplicateModelError
+- [x] E.3 Adaptar `tests/integration/test_model_registry.py` para DB real con TestClient
+- [x] E.4 Adaptar `tests/integration/test_predict_endpoint.py` para DB-backed registry
+- [x] E.5 Verificar suite completa: `pytest --cov=src --cov-report=term-missing -v && ruff check && mypy src/`
