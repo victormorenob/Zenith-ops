@@ -71,7 +71,7 @@ db-reset:
     uv run alembic upgrade head
 
 # ── Init ──────────────────────────────────────────────────
-# Build + run del init container (seed + migrate)
+# Build + run del init container (migrate + seed)
 build-init:
     docker compose -f infra/docker/docker-compose.dev.yml build init
 

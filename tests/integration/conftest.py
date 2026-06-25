@@ -1,181 +1,119 @@
-"""Integration test fixtures — creates model files needed by InferenceService
-and the Model Registry.
+"""Integration test fixtures.
 
-Two model layouts are seeded:
-  - ``models/<model_id>.joblib``              → legacy flat path (InferenceService)
-  - ``models/<model_id>/<version>/meta.json``  → versioned registry path
-  - ``models/<model_id>/<version>/model.joblib``
+PostgreSQL-backed tests opt in via ``@pytest.mark.postgres``. Tests that
+inject mocks (e.g. ``test_model_registry_api.py``) run without a database.
 """
 
-import json
+from __future__ import annotations
+
+import asyncio
 import os
+
+# TestClient runs the app on a different event loop than asyncio.run() setup.
+# NullPool must be set before zenith_ops.db.session creates the engine.
+if os.environ.get("DATABASE_URL"):
+    os.environ["ZENITH_OPS_DB_NULL_POOL"] = "1"
+
 from collections.abc import Generator
-from datetime import UTC, datetime
-from pathlib import Path
 
-import joblib
 import pytest
+from sqlalchemy import delete, text
+from sqlalchemy.exc import OperationalError
+from zenith_ops.core.exceptions import DuplicateModelError
+from zenith_ops.core.model_registry_db import PostgresModelRegistry
+from zenith_ops.db.models.model_registry import ModelRegistryEntry
+from zenith_ops.db.models.prediction_metadata import PredictionMetadata
+from zenith_ops.db.session import async_session_factory, engine
+from zenith_ops.services.predictor import InferenceService
 
-from zenith_ops.core.dummy_model import DummyIrisClassifier
-from zenith_ops.core.exceptions import ModelNotFoundError
-from zenith_ops.core.model_registry import ModelMetadata, ModelSummary
-
-MODELS_DIR = Path("models")
 MODEL_ID = "iris-classifier"
 MODEL_VERSION = "1.0.0"
 
 
-def _seed_model_file() -> None:
-    """Create the flat model file for the legacy InferenceService path."""
-    model_path = MODELS_DIR / f"{MODEL_ID}.joblib"
-    if model_path.exists():
-        return
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    model = DummyIrisClassifier()
-    joblib.dump(model, model_path)
-
-
-def _seed_registry_structure() -> None:
-    """Create the versioned model directory for the Model Registry.
-
-    ``FileBasedModelRegistry.scan()`` expects:
-      ``models/<model_id>/<version>/meta.json``
-      ``models/<model_id>/<version>/model.joblib``
-
-    We guard on ``model.joblib`` (not ``meta.json``) because
-    ``meta.json`` is committed to git while ``*.joblib`` files are
-    gitignored.  In a fresh CI checkout ``meta.json`` exists but
-    ``model.joblib`` does not.
-    """
-    version_dir = MODELS_DIR / MODEL_ID / MODEL_VERSION
-    if (version_dir / "model.joblib").exists():
-        return
-    os.makedirs(version_dir, exist_ok=True)
-
-    (version_dir / "meta.json").write_text(
-        json.dumps(
-            {
-                "model_id": MODEL_ID,
-                "name": "Iris Classifier",
-                "version": MODEL_VERSION,
-                "framework": "sklearn",
-                "status": "active",
-                "created_at": datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC).isoformat(),
-                "tags": ["classification", "iris", "multiclass"],
-            }
-        )
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers."""
+    config.addinivalue_line(
+        "markers",
+        "postgres: integration test requires a reachable PostgreSQL instance",
     )
 
-    model = DummyIrisClassifier()
-    joblib.dump(model, version_dir / "model.joblib")
+
+def _database_url_configured() -> bool:
+    """Return True when DATABASE_URL is set in the environment."""
+    return bool(os.environ.get("DATABASE_URL"))
 
 
-@pytest.fixture(autouse=True)
-def _auto_seed_models() -> None:
-    """Ensure all model files exist before each integration test.
-
-    Using function scope with a cheap guard so it works alongside
-    both sync and asyncio tests without plugin conflicts.
-    """
-    _seed_model_file()
-    _seed_registry_structure()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# In-memory mock for the ModelRegistry protocol
-# ──────────────────────────────────────────────────────────────────────
+async def _postgres_reachable() -> bool:
+    """Probe PostgreSQL with a lightweight SELECT 1."""
+    if not _database_url_configured():
+        return False
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except (OperationalError, OSError):
+        return False
 
 
-class MockModelRegistry:
-    """In-memory mock of ``ModelRegistry`` — no PostgreSQL, no event-loop
-    conflicts.
+@pytest.fixture(scope="session")
+def postgres_available() -> bool:
+    """True when DATABASE_URL points to a live PostgreSQL instance."""
+    return asyncio.run(_postgres_reachable())
 
-    Returns hardcoded metadata for ``iris-classifier`` and raises
-    ``ModelNotFoundError`` for any unknown ``model_id``.
 
-    ``resolve_path`` points to the real seeded ``.joblib`` file so
-    ``InferenceService`` can load the model and run predictions.
-    """
+async def _truncate_registry_tables() -> None:
+    """Remove all rows from registry tables (FK-safe order)."""
+    async with async_session_factory() as session:
+        await session.execute(delete(PredictionMetadata))
+        await session.execute(delete(ModelRegistryEntry))
+        await session.commit()
 
-    def __init__(self) -> None:
-        self._models: dict[str, ModelMetadata] = {
-            "iris-classifier": ModelMetadata(
-                model_id="iris-classifier",
-                name="Iris Classifier",
-                version="1.0.0",
-                framework="sklearn",
-                status="active",
-                created_at=datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC),
-                artifact_path=str(
-                    (
-                        MODELS_DIR / "iris-classifier" / "1.0.0" / "model.joblib"
-                    ).resolve()
-                ),
-                tags=["classification", "iris", "multiclass"],
-            ),
-        }
 
-    async def list_models(self) -> list[ModelSummary]:
-        return [
-            ModelSummary(
-                model_id=m.model_id,
-                name=m.name,
-                latest_version=m.version,
-                framework=m.framework,
-                status=m.status,
-                created_at=m.created_at,
-                tags=m.tags,
-            )
-            for m in self._models.values()
-        ]
-
-    async def get_model(self, model_id: str) -> ModelMetadata:
-        model = self._models.get(model_id)
-        if model is None:
-            raise ModelNotFoundError(model_id)
-        return model
-
-    async def resolve_path(self, model_id: str) -> Path:
-        model = self._models.get(model_id)
-        if model is None:
-            raise ModelNotFoundError(model_id)
-        return Path(model.artifact_path).resolve()
-
-    async def log_prediction(self, **kwargs: object) -> None:
-        """Best-effort no-op — never raises."""
+async def _seed_iris_classifier() -> None:
+    """Insert iris-classifier row and write the .joblib artifact."""
+    registry = PostgresModelRegistry(async_session_factory)
+    try:
+        await registry.register_and_build_model(
+            name=MODEL_ID,
+            version=MODEL_VERSION,
+            framework="sklearn",
+            model_type="dummy_iris",
+            description="Dummy Iris classifier for integration tests",
+            tags=["classification", "iris", "multiclass"],
+        )
+    except DuplicateModelError:
         return
 
 
-@pytest.fixture(autouse=True)
-def _mock_db_registry() -> Generator[None, None, None]:
-    """Replace the PostgreSQL-backed registry with an in-memory mock.
-
-    Overrides both FastAPI's ``Depends(get_registry)`` and
-    ``InferenceService._registry`` so no code path reaches ``asyncpg``
-    during integration tests.
-
-    Cleans up class-level caches after each test to prevent state
-    leaking between tests.
-    """
+def _reset_app_state() -> None:
+    """Clear singleton caches so each test starts from a clean slate."""
+    import zenith_ops.core.model_registry_db as reg_db
     from zenith_ops import app as _app
-    from zenith_ops.core.model_registry_db import get_registry
-    from zenith_ops.services.predictor import InferenceService
 
-    mock = MockModelRegistry()
-
-    # Wire into FastAPI DI for routes that depend on get_registry
-    async def _override_get_registry() -> MockModelRegistry:
-        return mock
-
-    _app.dependency_overrides[get_registry] = _override_get_registry
-
-    # Wire into InferenceService — bypasses DI for class-level _registry
-    InferenceService._registry = mock
-
-    yield
-
-    # ── Teardown: reset all class-level state ─────────────────────────
     InferenceService._registry = None
     InferenceService._models.clear()
     InferenceService._idempotency_cache.clear()
+    reg_db._registry_instance = None
     _app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _postgres_integration_lifecycle(
+    request: pytest.FixtureRequest,
+    postgres_available: bool,
+) -> Generator[None, None, None]:
+    """Seed PostgreSQL and reset caches for tests marked ``postgres``."""
+    if request.node.get_closest_marker("postgres") is None:
+        yield
+        return
+
+    if not postgres_available:
+        pytest.skip("PostgreSQL not available — set DATABASE_URL and run migrations")
+
+    asyncio.run(_truncate_registry_tables())
+    asyncio.run(_seed_iris_classifier())
+    _reset_app_state()
+
+    yield
+
+    _reset_app_state()
