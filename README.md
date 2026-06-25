@@ -41,14 +41,30 @@ flowchart LR
     API --> Models[/models volume\n.joblib artefacts/]
 ```
 
-Modular monolith: `api/v1/` (HTTP + Pydantic), `core/` (inference, registry), `db/` (SQLAlchemy + Alembic). `core/` never imports from `api/`.
+Modular monolith: `zenith_ops/api/v1/` (HTTP + Pydantic), `zenith_ops/core/` (registry, domain), `zenith_ops/db/` (ORM), `zenith_ops/services/` (inference). Alembic migrations live in `src/db/migrations/` (separate from ORM). `core/` never imports from `api/`.
+
+---
+
+## Project structure
+
+```
+src/
+├── db/migrations/          # Alembic
+├── monitoring/.gitkeep     # Phase 2+, not implemented
+├── training/.gitkeep       # Phase 2+, not implemented
+└── zenith_ops/             # installable package
+    ├── api/ (schemas/, v1/)
+    ├── core/
+    ├── db/                 # ORM only — no migrations here
+    └── services/           # e.g. predictor.py (InferenceService)
+```
 
 ---
 
 ## Engineering highlights
 
 - **FastAPI + Pydantic v2** — async HTTP layer, structured error responses, OpenAPI at `/docs`
-- **Modular monolith** — `api/` / `core/` / `db/`; business logic in `core/` with no FastAPI imports
+- **Modular monolith** — `zenith_ops/api/`, `core/`, `db/` (ORM), `services/`; Alembic in `src/db/migrations/`; business logic in `core/` and `services/` with no FastAPI imports
 - **PostgreSQL registry** — SQLAlchemy 2.0 async, Alembic migrations, JSONB for metrics
 - **Operations** — separate liveness/readiness probes, deploy runbook, post-deploy smoke checks on VPS
 - **CI/CD** — GitHub Actions; multi-stage Docker build; GHCR images; SSH deploy runs migrations before app

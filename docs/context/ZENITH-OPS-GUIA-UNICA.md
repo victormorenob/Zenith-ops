@@ -249,22 +249,29 @@ zenith-ops/
 │   ├── ISSUE_TEMPLATE/          ← feature.md, bug.md
 │   └── pull_request_template.md
 ├── src/
-│   ├── api/v1/                  ← Endpoints FastAPI
-│   ├── core/                    ← Lógica de negocio pura
-│   ├── db/                      ← Modelos SQLAlchemy, queries, migrations/
-│   ├── monitoring/              ← Métricas Prometheus, drift
-│   └── training/                ← Scripts de entrenamiento
+│   ├── db/migrations/           ← Alembic (alembic.ini → script_location)
+│   ├── monitoring/.gitkeep      ← Fase 2+, no implementado (métricas, drift)
+│   ├── training/.gitkeep        ← Fase 2+, no implementado (entrenamiento, MLflow)
+│   └── zenith_ops/              ← Paquete instalable
+│       ├── api/
+│       │   ├── schemas/         ← Schemas Pydantic compartidos
+│       │   └── v1/              ← Routers FastAPI (health, predict, models, …)
+│       ├── core/                ← Lógica de negocio pura (registry, settings, …)
+│       ├── db/                  ← ORM SQLAlchemy (base, session, models/) — sin migraciones
+│       └── services/            ← Servicios de aplicación (p. ej. predictor.py)
 ├── tests/
 │   ├── unit/                    ← Tests sin I/O externo
 │   └── integration/             ← Tests contra servicios reales
 ├── docs/
 │   ├── adr/                     ← Architecture Decision Records
+│   ├── context/                 ← Contexto denso para la IA
 │   ├── runbooks/                ← Cómo operar el sistema
 │   └── specs/                   ← Feature specifications
 ├── infra/
-│   ├── docker/                  ← Dockerfile, docker-compose
-│   ├── helm/                    ← Helm charts (Fase 3)
-│   └── terraform/               ← IaC (Fase 3)
+│   ├── docker/                  ← Dockerfile, docker-compose (dev + prod)
+│   ├── helm/                    ← Fase 3+, no implementado
+│   └── terraform/               ← Fase 3+, no implementado
+├── openspec/                    ← Artefactos SDD (changes/, specs/)
 ├── .env.example
 ├── .gitignore
 ├── .pre-commit-config.yaml
@@ -272,6 +279,8 @@ zenith-ops/
 ├── pyproject.toml
 └── README.md
 ```
+
+**ORM vs migraciones:** modelos y sesión en `zenith_ops/db/`; revisiones Alembic en `src/db/migrations/` (rutas separadas a propósito).
 
 ---
 
