@@ -117,6 +117,73 @@ class TestCacheHit:
             assert result_type == ResultType.SCALAR
 
 
+class TestIdempotency:
+    """Duplicate idempotency keys return the first successful prediction."""
+
+    async def test_successful_prediction_is_cached_by_idempotency_key(self) -> None:
+        """A successful keyed prediction is stored for duplicate retries."""
+        # Arrange
+        model = MagicMock()
+        model.predict.return_value = 0.25
+        created_tasks, capture_create_task = _capture_created_tasks()
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_load_model",
+                new_callable=AsyncMock,
+                return_value=model,
+            ) as mock_load,
+            patch("asyncio.create_task", side_effect=capture_create_task),
+        ):
+            first_result = await InferenceService.predict(
+                model_id="idempotent-model",
+                features={"sepal_length": 5.1},
+                idempotency_key="request-123",
+            )
+            await created_tasks[0]
+
+            second_result = await InferenceService.predict(
+                model_id="idempotent-model",
+                features={"sepal_length": 99.0},
+                idempotency_key="request-123",
+            )
+
+        # Assert
+        assert first_result == second_result
+        assert InferenceService._idempotency_cache["request-123"] == first_result
+        mock_load.assert_awaited_once_with("idempotent-model")
+        assert model.predict.call_count == 1
+        assert len(created_tasks) == 1
+
+    async def test_cached_idempotency_key_skips_model_loading_and_logging(self) -> None:
+        """A duplicate retry returns immediately without side effects."""
+        # Arrange
+        cached_result = (0.7, ResultType.SCALAR, 12.3)
+        InferenceService._idempotency_cache["retry-key"] = cached_result
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_get_model",
+                new_callable=AsyncMock,
+            ) as mock_get_model,
+            patch("asyncio.create_task") as mock_create_task,
+        ):
+            result = await InferenceService.predict(
+                model_id="cached-model",
+                features={"sepal_length": 5.1},
+                idempotency_key="retry-key",
+            )
+
+        # Assert
+        assert result == cached_result
+        mock_get_model.assert_not_awaited()
+        mock_create_task.assert_not_called()
+
+
 class TestModelNotFound:
     """Requesting an unknown model_id raises ModelNotFoundError."""
 
