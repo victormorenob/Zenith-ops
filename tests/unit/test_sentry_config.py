@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from zenith_ops.core.settings import Settings
 
 
@@ -145,6 +146,7 @@ class TestEnrichEventWithCorrelationId:
     ) -> None:
         # Arrange
         from structlog.contextvars import bind_contextvars, clear_contextvars
+
         from zenith_ops.core.sentry_config import _enrich_event_with_correlation_id
 
         bind_contextvars(correlation_id="abc-123")
