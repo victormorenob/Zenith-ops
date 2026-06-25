@@ -1,13 +1,17 @@
 """Integration tests for POST /v1/predict endpoint.
 
-Uses TestClient against the real FastAPI app with exception handlers.
+Uses TestClient against the real FastAPI app with a PostgreSQL-backed
+registry seeded by ``tests/integration/conftest.py``.
 """
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
 from zenith_ops.services.predictor import InferenceService
+
+pytestmark = pytest.mark.postgres
 
 client = TestClient(app)
 
