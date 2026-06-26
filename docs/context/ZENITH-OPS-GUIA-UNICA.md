@@ -335,7 +335,7 @@ just lint        # Sin errores
 
 ### Objetivo
 
-API en producción real (Fly.io, HTTPS) que sirve predicciones de un modelo hardcodeado,
+API en producción real (VPS Hetzner, HTTP; HTTPS en Fase 1.5+) que sirve predicciones de un modelo hardcodeado,
 con CI/CD, tests reales y documentación.
 
 ### Qué aprendés
@@ -349,9 +349,9 @@ con CI/CD, tests reales y documentación.
 - Health checks diferenciados
 - Idempotency keys
 
-### BD: las 3 tablas de Fase 1
+### BD: las 2 tablas de Fase 1 (checkpoint)
 
-Solo estas tres. Nada más.
+Solo estas dos para cerrar Fase 1. `health_checks` → Fase 1.5+ (no blocker).
 
 **Tabla 1: `model_registry`** — ¿Por acá? Sin registry no sé qué modelo usar para predecir.
 
@@ -378,7 +378,7 @@ Solo estas tres. Nada más.
 | latency_ms | INT | Rendimiento |
 | created_at | TIMESTAMPTZ | |
 
-**Tabla 3: `health_checks`** — ¿Por acá? /health/ready necesita historial de checks.
+**Tabla 3: `health_checks`** *(Fase 1.5+ — historial de probes; no blocker de checkpoint)*
 
 | Columna | Tipo |
 |---|---|
@@ -392,6 +392,7 @@ Solo estas tres. Nada más.
 
 | Tabla | Entra en | Razón |
 |---|---|---|
+| health_checks | Fase 1.5+ | Historial de probes; endpoints /health/* ya cubren el MVP |
 | experiments | Fase 2 | MLflow los gestiona |
 | model_versions | Fase 2 | Solo con reentrenamiento |
 | prediction_logs (features) | Fase 2 | Solo para drift detection |
@@ -536,6 +537,8 @@ Binaria. Todo verde o no avanzás.
 - [ ] README con diagrama, quick start, endpoints
 - [ ] Mínimo 2 ADRs escritos
 - [ ] Runbook de deploy en /docs/runbooks/
+
+> **Nota (2026-06-26):** Tabla `health_checks` y HTTPS/TLS **no** son requisitos del checkpoint — post-MVP / Fase 1.5+.
 
 ---
 
@@ -826,7 +829,7 @@ Esto es el carril B. El proyecto es siempre la prioridad.
 |---|---|---|---|
 | model_registry | 1 | Sin registry no sé qué modelo usar | 6 |
 | prediction_metadata | 1 | Cada request deja traza para debugging | 4 |
-| health_checks | 1 | /health/ready necesita historial de checks | 8 |
+| health_checks | 1.5+ | Historial de probes; no blocker de Fase 1 | 8+ |
 | experiments | 2 | MLflow genera experimentos, los registro | 11 |
 | model_versions | 2 | Cada entrenamiento crea una versión | 13 |
 | prediction_logs | 2 | Drift detection necesita features históricas | 17 |

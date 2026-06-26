@@ -19,7 +19,7 @@ The Phase 1 stack is deployed at [http://167.233.116.195:8000](http://167.233.11
 
 ## At a glance
 
-- **Phase:** 1 — MVP (API, registry, health, CI/CD)
+- **Phase:** 1 — MVP (cerrada 2026-06-26)
 - **Production:** [http://167.233.116.195:8000](http://167.233.116.195:8000)
 - **Planned:** Phase 2 — MLflow, Prometheus/Grafana, drift detection
 
@@ -138,6 +138,50 @@ curl -sf http://167.233.116.195:8000/health/ready
 Deploy flow: push to `main` → GitHub Actions **CI** (tests, lint) → **CD** builds GHCR images and SSH-deploys to the Hetzner VPS (migrate then app).
 
 Operator runbook: [docs/runbooks/deploy-production.md](docs/runbooks/deploy-production.md).
+
+---
+
+## Demo / Probar el MVP
+
+Para probar la API en producción sin instalar nada (navegador o terminal).
+
+**URL:** [http://167.233.116.195:8000/docs](http://167.233.116.195:8000/docs) (Swagger — interfaz visual)
+
+### 1. Health check
+
+```bash
+curl -s http://167.233.116.195:8000/health/live
+```
+
+Éxito: JSON con `"status":"up"`.
+
+### 2. Listar modelos
+
+```bash
+curl -s http://167.233.116.195:8000/v1/models
+```
+
+Éxito: lista con al menos `iris-classifier` en estado `production`.
+
+### 3. Predicción (iris-classifier)
+
+```bash
+curl -s -X POST http://167.233.116.195:8000/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "iris-classifier",
+    "features": {
+      "sepal_length": 5.1,
+      "sepal_width": 3.5,
+      "petal_length": 1.4,
+      "petal_width": 0.2
+    }
+  }'
+```
+
+Éxito: HTTP 200 y JSON con `prediction_id`, `model_id`, `result`, `result_type` y `latency_ms` (típicamente menos de 100 ms tras el primer request).
+
+En Swagger: sección **predict** → **Try it out** → pegar el JSON de arriba → **Execute**.
 
 ---
 

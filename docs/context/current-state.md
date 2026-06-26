@@ -1,4 +1,4 @@
-# Estado actual del proyecto — 2026-06-25
+# Estado actual del proyecto — 2026-06-26
 
 **Nota (2026-05-14):** el repositorio quedó en una sola raíz (`pyproject.toml` y `Justfile` al mismo nivel); se eliminó la carpeta duplicada `Zenith-ops/Zenith-ops/`.
 
@@ -15,7 +15,21 @@
 - [x] Migraciones Alembic en `src/db/migrations/` (ORM en `zenith_ops/db/`, rutas separadas)
 - [x] CI/CD: GitHub Actions → deploy en VPS Hetzner (producción en `http://167.233.116.195:8000`)
 - [x] Docker multi-stage (`infra/docker/`) con compose dev y prod
-- [x] Sentry error tracking (DSN opcional, `correlation_id` tag, middleware catch-all)
+- [x] Sentry error tracking en código (DSN opcional, `correlation_id` tag, middleware catch-all)
+
+## Fase 1 — CERRADA (2026-06-26)
+
+MVP desplegado en `http://167.233.116.195:8000`: predict, model registry en PostgreSQL, health probes, CI/CD a VPS, Sentry verificado en producción.
+
+**Diferido (Fase 1.5+):**
+
+- Tabla `health_checks` en PostgreSQL (historial de probes; los endpoints `/health/live` y `/health/ready` siguen activos)
+- HTTPS/TLS en producción
+
+**Deuda opcional (no bloquea Fase 2):**
+
+- `docker-prod-deploy` Phase D: smoke manual formal en VPS (migrate-before-app, escenarios del spec)
+- CD vía SSH: revalidar tras reset del VPS
 
 ## En progreso
 

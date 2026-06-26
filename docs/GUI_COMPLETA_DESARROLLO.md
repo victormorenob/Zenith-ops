@@ -162,7 +162,7 @@ Esa diferencia se nota en 10 segundos en una entrevista.
 | Fase | Qué se construye | Estado |
 |------|------------------|--------|
 | **Fase 0** | Python + setup del entorno + fundamentos | ✅ Completada |
-| **Fase 1** | MVP: API REST + Model Registry + CI/CD + Deploy | 🔧 En progreso |
+| **Fase 1** | MVP: API REST + Model Registry + CI/CD + Deploy | ✅ Completada (2026-06-26) |
 | **Fase 2** | MLOps: MLflow + Prometheus + Grafana + Drift Detection | 📝 Planeada |
 | **Fase 3** | Infraestructura: Kubernetes + Terraform + Portfolio | 📝 Planeada |
 
@@ -1205,7 +1205,7 @@ Qué partes del sistema toca. 2–4 frases.]
 
 #### Estructura BD planificada para Fase 1
 
-La Fase 1 tendrá 3 tablas en PostgreSQL:
+La Fase 1 tiene **2 tablas** en PostgreSQL (checkpoint). `health_checks` queda para Fase 1.5+ (ver nota en checkpoint).
 
 **Tabla 1: `model_registry`**
 ```sql
@@ -1237,7 +1237,8 @@ CREATE TABLE prediction_metadata (
 );
 ```
 
-**Tabla 3: `health_checks`**
+**Tabla 3: `health_checks`** *(Fase 1.5+ — no blocker de checkpoint)*
+
 ```sql
 CREATE TABLE health_checks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1375,8 +1376,8 @@ curl -X POST http://localhost:8000/v1/models/register \
 curl http://localhost:8000/health/live   # → 200
 curl http://localhost:8000/health/ready  # → 200
 
-# En producción
-curl https://[app].fly.dev/health/ready  # → 200
+# En producción (HTTP en VPS; HTTPS → Fase 1.5+, no blocker)
+curl http://167.233.116.195:8000/health/ready  # → 200
 
 # Coverage
 uv run pytest tests/ --cov=src --cov-report=term-missing
@@ -1387,6 +1388,8 @@ ls docs/adr/ | wc -l       # >= 3
 ls docs/runbooks/ | wc -l  # >= 2
 # README con diagrama de arquitectura y link a API desplegada
 ```
+
+> **Nota (2026-06-26):** Tabla `health_checks` y HTTPS/TLS están **fuera** del checkpoint de Fase 1 — post-MVP / Fase 1.5+, no blockers para pasar a Fase 2.
 
 ---
 
@@ -1400,7 +1403,7 @@ ls docs/runbooks/ | wc -l  # >= 2
 
 #### Estructura BD Fase 2 — Tablas adicionales
 
-Las 3 tablas de Fase 1 permanecen sin cambios. Se añaden:
+Las 2 tablas de Fase 1 (checkpoint) permanecen sin cambios. Se añaden:
 
 **Tabla 4: `experiments`**
 ```sql
@@ -1729,7 +1732,7 @@ ls -la docs/runbooks/
 
 | Criterio | Cómo verificarlo |
 |---|---|
-| API desplegada en Fly.io con HTTPS | Llamar al endpoint desde el móvil |
+| API desplegada en VPS con CI/CD (HTTPS → Fase 1.5+) | Llamar al endpoint desde el móvil |
 | CI/CD: falla si falla un test | Romper un test, verificar pipeline |
 | Coverage > 70% en `src/` | Badge en README |
 | 3 ADRs escritos | Ver `/docs/adr/` |
