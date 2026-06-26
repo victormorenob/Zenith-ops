@@ -1,8 +1,8 @@
 # ADR-009: PostgreSQL on Host, Application in Docker (Production VPS)
 
-**Estado:** Aprobado  
-**Fecha:** 2026-06-24  
-**Autor:** Víctor Moreno  
+**Estado:** Aprobado
+**Fecha:** 2026-06-24
+**Autor:** Víctor Moreno
 **Relacionado:** DDD-001 (k3s deferred), change `docker-prod-deploy`
 
 ---
@@ -51,6 +51,7 @@ Zenith-ops necesita un camino de despliegue en VPS antes de Fase 3 (Kubernetes, 
 - `host.docker.internal` requiere `extra_hosts` en Linux (no automático como en Docker Desktop)
 - Operador debe ejecutar seed manual una vez (`scripts/generate_dummy_model.py` o equivalente)
 - Readiness (`/health/ready`) requiere modelos en volumen — sin seed, readiness devuelve 503 hasta bootstrap
+- **HTTPS/TLS** no es requisito del checkpoint Fase 1; HTTP en `:8000` hasta Fase 1.5+ (ver runbook §9)
 
 ### Operación
 

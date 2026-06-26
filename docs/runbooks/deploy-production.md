@@ -237,9 +237,9 @@ Revert the commit on `main`; the next green CI run redeploys the previous SHA.
 
 ---
 
-## 9. TLS / reverse proxy (optional)
+## 9. TLS / reverse proxy (optional — Fase 1.5+)
 
-This change does **not** ship a reverse proxy. The app listens on HTTP port `8000`. For production TLS, place **Caddy** or **nginx** in front of the host (terminate TLS, proxy to `127.0.0.1:8000`). Configure certificates (Let's Encrypt) and firewall so only 443 is public.
+This change does **not** ship a reverse proxy. The app listens on HTTP port `8000`. **TLS is not a Phase 1 MVP checkpoint blocker**; configure when moving to Fase 1.5+. For production TLS, place **Caddy** or **nginx** in front of the host (terminate TLS, proxy to `127.0.0.1:8000`). Configure certificates (Let's Encrypt) and firewall so only 443 is public.
 
 ---
 
