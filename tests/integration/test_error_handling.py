@@ -8,6 +8,7 @@ Tests:
 """
 
 import re
+from unittest.mock import patch
 
 import structlog
 from fastapi.testclient import TestClient
@@ -88,6 +89,22 @@ class TestUnhandledException:
         assert response.status_code == 500
         assert "X-Correlation-ID" in response.headers
         assert re.match(UUID_V4_REGEX, response.headers["X-Correlation-ID"])
+
+    def test_unhandled_error_is_sent_to_sentry_capture(
+        self,
+    ) -> None:
+        """Unhandled exceptions should be forwarded to the Sentry capture hook."""
+        # Arrange
+        with patch("zenith_ops.capture_exception") as mock_capture:
+            # Act
+            response = client.get("/test/raise-error")
+
+        # Assert
+        assert response.status_code == 500
+        mock_capture.assert_called_once()
+        captured_exc = mock_capture.call_args.args[0]
+        assert isinstance(captured_exc, RuntimeError)
+        assert str(captured_exc) == "Test unhandled error"
 
 
 class TestDomainHandlerPrecedence:
