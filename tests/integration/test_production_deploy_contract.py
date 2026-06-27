@@ -88,9 +88,7 @@ def test_prod_compose_file_declares_host_pg_and_migrate_gate() -> None:
     compose_text = _read_text(PROD_COMPOSE_PATH)
 
     # Act
-    host_gateway_occurrences = compose_text.count(
-        '"host.docker.internal:host-gateway"'
-    )
+    host_gateway_occurrences = compose_text.count('"host.docker.internal:host-gateway"')
 
     # Assert
     assert "\n  migrate:\n" in compose_text
