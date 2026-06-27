@@ -181,7 +181,8 @@ def test_env_example_documents_production_host_gateway_contract() -> None:
     env_example = _read_text(ENV_EXAMPLE_PATH)
 
     # Act
-    production_section = env_example.split("# ── Producción", maxsplit=1)[1]
+    production_index = env_example.index("DATABASE_URL=postgresql+asyncpg://zenith")
+    production_section = env_example[production_index:]
 
     # Assert
     assert "DATABASE_URL=postgresql+asyncpg://" in production_section
