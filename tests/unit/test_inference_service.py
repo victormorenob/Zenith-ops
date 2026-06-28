@@ -204,6 +204,45 @@ class TestModelNotFound:
             )
 
 
+class TestLoadModel:
+    """Model artifact loading through the registry."""
+
+    async def test_load_model_raises_not_found_when_artifact_is_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """A registry hit with a missing artifact should keep the 404 contract."""
+        # Arrange
+        missing_model_path = tmp_path / "models" / "iris-classifier.joblib"
+        mock_registry = MagicMock()
+        mock_registry.resolve_path = AsyncMock(return_value=missing_model_path)
+        InferenceService._registry = mock_registry
+
+        # Act / Assert
+        with pytest.raises(
+            ModelNotFoundError,
+            match="No model found with id: iris-classifier",
+        ):
+            await InferenceService._load_model("iris-classifier")
+        mock_registry.resolve_path.assert_awaited_once_with("iris-classifier")
+
+    async def test_load_model_raises_inference_error_when_artifact_is_invalid(
+        self, tmp_path: Path
+    ) -> None:
+        """A corrupt artifact should surface as a model execution/load failure."""
+        # Arrange
+        invalid_model_path = tmp_path / "models" / "iris-classifier.joblib"
+        invalid_model_path.parent.mkdir(parents=True)
+        invalid_model_path.write_bytes(b"not a joblib artifact")
+        mock_registry = MagicMock()
+        mock_registry.resolve_path = AsyncMock(return_value=invalid_model_path)
+        InferenceService._registry = mock_registry
+
+        # Act / Assert
+        with pytest.raises(InferenceError, match="Model failed during inference"):
+            await InferenceService._load_model("iris-classifier")
+        mock_registry.resolve_path.assert_awaited_once_with("iris-classifier")
+
+
 class TestTimeout:
     """Inference exceeding the timeout raises InferenceTimeoutError."""
 
