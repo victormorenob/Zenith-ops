@@ -69,6 +69,12 @@ def _make_entry(
     return entry
 
 
+def _compiled_executed_statement(mock_session: AsyncMock) -> str:
+    """Return the SQL string for the statement passed to session.execute."""
+    statement = mock_session.execute.await_args.args[0]
+    return str(statement.compile(compile_kwargs={"literal_binds": True})).lower()
+
+
 # ── B.3: Constructor ────────────────────────────────────────────────────
 
 
@@ -143,6 +149,24 @@ class TestListModels:
         # filters archived, so the archived entry is excluded.
         mock_session.execute.assert_awaited_once()
 
+    async def test_query_selects_latest_model_by_created_at(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """The latest model per name is based on created_at, not version text."""
+        # Arrange
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.list_models()
+
+        # Assert
+        compiled_statement = _compiled_executed_statement(mock_session)
+        assert "max(model_registry.created_at)" in compiled_statement
+        assert "max(model_registry.version)" not in compiled_statement
+        assert "max_created_at" in compiled_statement
+
 
 # ── B.5: get_model ──────────────────────────────────────────────────────
 
@@ -178,6 +202,24 @@ class TestGetModel:
 
         with pytest.raises(ModelNotFoundError, match="unknown"):
             await registry.get_model("unknown")
+
+    async def test_query_orders_by_created_at_desc_for_latest_model(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """get_model resolves latest by insertion time instead of version text."""
+        # Arrange
+        entry = _make_entry()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = entry
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.get_model("iris-classifier")
+
+        # Assert
+        compiled_statement = _compiled_executed_statement(mock_session)
+        assert "order by model_registry.created_at desc" in compiled_statement
+        assert "order by model_registry.version desc" not in compiled_statement
 
 
 # ── B.6: resolve_path ───────────────────────────────────────────────────

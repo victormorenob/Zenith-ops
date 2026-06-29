@@ -47,18 +47,18 @@ class PostgresModelRegistry:
     # ── Protocol: read methods ──────────────────────────────────────────
 
     async def list_models(self) -> list[ModelSummary]:
-        """Latest version per model name, excluding archived models.
+        """Latest created model per model name, excluding archived models.
 
-        Uses a subquery to find the maximum version per name, then joins
+        Uses a subquery to find the maximum creation timestamp per name, then joins
         back to the full row to extract metadata. Results are ordered by
         model name.
         """
         async with self._session_factory() as session:
-            # Subquery: latest version per name (exclude archived)
-            latest_version_subq = (
+            # Subquery: latest created row per name (exclude archived)
+            latest_created_at_subq = (
                 select(
                     ModelRegistryEntry.name,
-                    func.max(ModelRegistryEntry.version).label("max_version"),
+                    func.max(ModelRegistryEntry.created_at).label("max_created_at"),
                 )
                 .where(ModelRegistryEntry.status != "archived")
                 .group_by(ModelRegistryEntry.name)
@@ -67,10 +67,11 @@ class PostgresModelRegistry:
             stmt = (
                 select(ModelRegistryEntry)
                 .join(
-                    latest_version_subq,
+                    latest_created_at_subq,
                     and_(
-                        ModelRegistryEntry.name == latest_version_subq.c.name,
-                        ModelRegistryEntry.version == latest_version_subq.c.max_version,
+                        ModelRegistryEntry.name == latest_created_at_subq.c.name,
+                        ModelRegistryEntry.created_at
+                        == latest_created_at_subq.c.max_created_at,
                     ),
                 )
                 .order_by(ModelRegistryEntry.name)
@@ -81,7 +82,7 @@ class PostgresModelRegistry:
             return [self._to_summary(e) for e in entries]
 
     async def get_model(self, model_id: str) -> ModelMetadata:
-        """Latest version of the model identified by ``name``.
+        """Latest created version of the model identified by ``name``.
 
         Raises :class:`ModelNotFoundError` if no model with that name exists.
         """
@@ -89,7 +90,7 @@ class PostgresModelRegistry:
             stmt = (
                 select(ModelRegistryEntry)
                 .where(ModelRegistryEntry.name == model_id)
-                .order_by(ModelRegistryEntry.version.desc())
+                .order_by(ModelRegistryEntry.created_at.desc())
                 .limit(1)
             )
             result = await session.execute(stmt)
