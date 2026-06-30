@@ -66,7 +66,10 @@ class TestConfigureSentry:
         self, mock_init: MagicMock
     ) -> None:
         # Arrange
-        from zenith_ops.core.sentry_config import configure_sentry
+        from zenith_ops.core.sentry_config import (
+            _enrich_event_with_correlation_id,
+            configure_sentry,
+        )
 
         settings = Settings(
             DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",  # type: ignore[arg-type]
@@ -85,6 +88,7 @@ class TestConfigureSentry:
         assert call_kwargs["dsn"] == "https://key@o0.ingest.sentry.io/1"
         assert call_kwargs["environment"] == "staging"
         assert call_kwargs["traces_sample_rate"] == 0.25
+        assert call_kwargs["before_send"] is _enrich_event_with_correlation_id
         assert call_kwargs["send_default_pii"] is False
         assert len(call_kwargs["integrations"]) == 2
 

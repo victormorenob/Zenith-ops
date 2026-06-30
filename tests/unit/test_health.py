@@ -108,6 +108,7 @@ class TestCheckDatabase:
 
         assert result == "up"
         mock_conn.execute.assert_awaited_once()
+        mock_engine.dispose.assert_awaited_once()
 
     async def test_returns_down_when_connection_fails(self) -> None:
         """When database is unreachable, should return 'down'."""
@@ -125,6 +126,7 @@ class TestCheckDatabase:
             result = await check_database(settings)
 
         assert result == "down"
+        mock_engine.dispose.assert_awaited_once()
 
 
 class TestCheckModelCache:
