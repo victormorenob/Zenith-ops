@@ -6,7 +6,6 @@ best-effort prediction metadata logging.
 
 import asyncio
 import json
-import time
 import uuid
 from collections.abc import Callable, Coroutine, Generator
 from pathlib import Path
@@ -210,7 +209,7 @@ class TestTimeout:
     async def test_timeout_exceeded_raises_error(self) -> None:
         """Predict that blocks > 5s should raise InferenceTimeoutError."""
         slow_model = MagicMock()
-        slow_model.predict = MagicMock(side_effect=lambda features: time.sleep(10))
+        slow_model.predict.return_value = 0.0
 
         InferenceService._models["slow-model"] = slow_model
 
@@ -224,11 +223,54 @@ class TestTimeout:
                 new_callable=AsyncMock,
                 return_value=slow_model,
             ),
+            patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError),
         ):
             await InferenceService.predict(
                 model_id="slow-model",
                 features={"sepal_length": 5.1},
             )
+
+    async def test_timeout_schedules_error_metadata_log(self) -> None:
+        """A timed-out prediction still records best-effort error metadata."""
+        # Arrange
+        slow_model = MagicMock()
+        slow_model.predict.return_value = 0.0
+        mock_registry = MagicMock()
+        mock_registry.log_prediction = AsyncMock()
+        InferenceService._registry = mock_registry
+        created_tasks, capture_create_task = _capture_created_tasks()
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_get_model",
+                new_callable=AsyncMock,
+                return_value=slow_model,
+            ),
+            patch("asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError),
+            patch("asyncio.create_task", side_effect=capture_create_task),
+            pytest.raises(
+                InferenceTimeoutError, match="Inference took longer than 5000ms"
+            ),
+        ):
+            await InferenceService.predict(
+                model_id="iris-classifier",
+                features={"sepal_length": 5.1},
+            )
+        await created_tasks[0]
+
+        # Assert
+        mock_registry.log_prediction.assert_awaited_once()
+        log_kwargs = mock_registry.log_prediction.await_args.kwargs
+        assert isinstance(log_kwargs["request_id"], uuid.UUID)
+        assert log_kwargs["model_id"] == "iris-classifier"
+        assert log_kwargs["features"] == {"sepal_length": 5.1}
+        assert log_kwargs["result"] is None
+        assert log_kwargs["result_type"] is None
+        assert log_kwargs["status"] == "error"
+        assert log_kwargs["error_message"] == "timeout"
+        assert isinstance(log_kwargs["latency_ms"], float)
 
 
 class TestInferenceError:
