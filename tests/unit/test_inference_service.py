@@ -203,6 +203,26 @@ class TestModelNotFound:
                 features={"sepal_length": 5.1},
             )
 
+    async def test_registry_row_with_missing_artifact_raises_error(
+        self, tmp_path: Path
+    ) -> None:
+        """A known model with a missing artifact should map to not found."""
+        # Arrange
+        missing_artifact_path = (
+            tmp_path / "models" / "iris-classifier" / "1.0.0" / "model.joblib"
+        )
+        mock_registry = MagicMock()
+        mock_registry.resolve_path = AsyncMock(return_value=missing_artifact_path)
+        InferenceService._registry = mock_registry
+
+        # Act / Assert
+        with pytest.raises(
+            ModelNotFoundError, match="No model found with id: iris-classifier"
+        ):
+            await InferenceService._load_model("iris-classifier")
+
+        mock_registry.resolve_path.assert_awaited_once_with("iris-classifier")
+
 
 class TestTimeout:
     """Inference exceeding the timeout raises InferenceTimeoutError."""
