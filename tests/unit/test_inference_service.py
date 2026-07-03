@@ -257,6 +257,23 @@ class TestInferenceError:
                 features={"sepal_length": 5.1},
             )
 
+    async def test_corrupt_model_artifact_raises_inference_error(
+        self, tmp_path: Path
+    ) -> None:
+        """If joblib cannot deserialize an artifact, raise InferenceError."""
+        # Arrange
+        model_path = tmp_path / "model.joblib"
+        model_path.write_bytes(b"not a valid joblib artifact")
+        mock_registry = MagicMock()
+        mock_registry.resolve_path = AsyncMock(return_value=model_path)
+        InferenceService._registry = mock_registry
+
+        # Act / Assert
+        with pytest.raises(InferenceError, match="Model failed during inference"):
+            await InferenceService._load_model("corrupt-model")
+
+        mock_registry.resolve_path.assert_awaited_once_with("corrupt-model")
+
 
 class TestPredictionMetadataLogging:
     """Prediction metadata logging is scheduled as a best-effort side effect."""
