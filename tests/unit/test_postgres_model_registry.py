@@ -212,6 +212,48 @@ class TestResolvePath:
             await registry.resolve_path("ghost-model")
 
 
+# ── B.6b: Mapping helpers ───────────────────────────────────────────────
+
+
+class TestMappingHelpers:
+    """Mapping helpers return stable Pydantic shapes for DB-backed rows."""
+
+    def test_to_metadata_coerces_metric_values_and_defaults_optional_fields(
+        self,
+    ) -> None:
+        """String JSONB metrics and NULL-ish fields map to API-safe values."""
+        # Arrange
+        entry = _make_entry()
+        entry.metrics = {"accuracy": "0.95", "latency_ms": 12}
+        entry.description = None
+        entry.artifact_path = None
+        entry.tags = None
+
+        # Act
+        metadata = PostgresModelRegistry._to_metadata(entry)
+
+        # Assert
+        assert metadata.metrics == {"accuracy": 0.95, "latency_ms": 12.0}
+        assert metadata.description == ""
+        assert metadata.artifact_path == ""
+        assert metadata.tags == []
+
+    def test_to_summary_coerces_malformed_jsonb_tags_without_crashing(
+        self,
+    ) -> None:
+        """Non-list JSONB tags still produce a ModelSummary response."""
+        # Arrange
+        entry = _make_entry()
+        entry.tags = {"owner": "ml-platform"}
+
+        # Act
+        summary = PostgresModelRegistry._to_summary(entry)
+
+        # Assert
+        assert isinstance(summary, ModelSummary)
+        assert summary.tags == list(str({"owner": "ml-platform"}))
+
+
 # ── B.7: register_model ────────────────────────────────────────────────
 
 
@@ -335,6 +377,20 @@ class TestUpdateStatus:
                 model_uuid="550e8400-e29b-41d4-a716-446655440000",
                 status="production",
             )
+
+    async def test_raises_value_error_for_malformed_uuid_before_db_write(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """A malformed UUID is rejected without committing status changes."""
+        # Arrange
+        model_uuid = "not-a-uuid"
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="badly formed hexadecimal UUID string"):
+            await registry.update_status(model_uuid=model_uuid, status="production")
+
+        mock_session.execute.assert_not_awaited()
+        mock_session.commit.assert_not_awaited()
 
 
 # ── C.Extra: register_and_build_model (Phase C) ──────────────────────────
