@@ -8,11 +8,16 @@ Tests:
 """
 
 import re
+from typing import NoReturn
 
+import pytest
 import structlog
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
+from zenith_ops.core.exceptions import InferenceTimeoutError
+from zenith_ops.services.predictor import InferenceService
 
 UUID_V4_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
@@ -104,6 +109,43 @@ class TestDomainHandlerPrecedence:
         assert body["error"] == "model_not_found", (
             "Domain handler must run, not catch-all"
         )
+
+
+class TestInferenceTimeoutContract:
+    """Inference timeout domain errors keep the public API contract."""
+
+    def test_predict_timeout_returns_503_not_internal_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """InferenceTimeoutError should map to the retryable 503 contract."""
+
+        async def fake_predict(
+            model_id: str,
+            features: dict[str, float],
+            idempotency_key: str | None = None,
+        ) -> NoReturn:
+            raise InferenceTimeoutError(timeout_ms=5000)
+
+        # Arrange
+        monkeypatch.setattr(InferenceService, "predict", fake_predict)
+
+        # Act
+        response = client.post(
+            "/v1/predict",
+            json={
+                "model_id": "slow-model",
+                "features": {"sepal_length": 5.1},
+            },
+        )
+
+        # Assert
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.json() == {
+            "error": "inference_timeout",
+            "message": "Inference took longer than 5000ms",
+        }
+        assert re.match(UUID_V4_REGEX, response.headers["X-Correlation-ID"])
 
 
 # ── Test-only endpoint for triggering unhandled exceptions ──────────
