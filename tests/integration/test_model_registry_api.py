@@ -193,13 +193,29 @@ class TestRegisterModelEndpoint:
                 "name": "new-model",
                 "version": "1.0.0",
                 "framework": "sklearn",
+                "description": "Generated dummy model",
                 "model_type": "dummy_iris",
+                "metrics": {"accuracy": 0.97},
+                "tags": ["generated", "iris"],
+                "input_schema": {"type": "object"},
+                "output_schema": {"type": "number"},
             },
         )
         assert response.status_code == status.HTTP_201_CREATED
         body = response.json()
         assert body["model"]["name"] == "new-model"
         assert body["model"]["status"] == "staging"
+        reg.register_and_build_model.assert_awaited_once_with(  # type: ignore[attr-defined]
+            name="new-model",
+            version="1.0.0",
+            framework="sklearn",
+            model_type="dummy_iris",
+            description="Generated dummy model",
+            metrics={"accuracy": 0.97},
+            tags=["generated", "iris"],
+            input_schema={"type": "object"},
+            output_schema={"type": "number"},
+        )
 
     def test_register_with_artifact_path_returns_201(self) -> None:
         """Registering with artifact_path returns 201."""
@@ -223,12 +239,28 @@ class TestRegisterModelEndpoint:
                 "name": "existing-model",
                 "version": "2.0.0",
                 "framework": "pytorch",
+                "description": "Pre-built artifact",
                 "artifact_path": "models/existing/2.0.0/model.pt",
+                "metrics": {"f1": 0.88},
+                "tags": ["imported"],
+                "input_schema": {"type": "object"},
+                "output_schema": {"type": "array"},
             },
         )
         assert response.status_code == status.HTTP_201_CREATED
         body = response.json()
         assert body["model"]["artifact_path"] == "models/existing/2.0.0/model.pt"
+        reg.register_model.assert_awaited_once_with(  # type: ignore[attr-defined]
+            name="existing-model",
+            version="2.0.0",
+            framework="pytorch",
+            artifact_path="models/existing/2.0.0/model.pt",
+            description="Pre-built artifact",
+            metrics={"f1": 0.88},
+            tags=["imported"],
+            input_schema={"type": "object"},
+            output_schema={"type": "array"},
+        )
 
     def test_duplicate_returns_409(self) -> None:
         """Duplicate (name, version) returns 409 with duplicate_model error."""
