@@ -302,6 +302,41 @@ class TestPredictionMetadataLogging:
         assert log_kwargs["error_message"] is None
         assert isinstance(log_kwargs["latency_ms"], float)
 
+    async def test_successful_predict_uses_supplied_request_id_for_metadata_log(
+        self,
+    ) -> None:
+        """Metadata request_id should match the caller-visible prediction id."""
+        # Arrange
+        request_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        model = MagicMock()
+        model.predict.return_value = 0.5
+        mock_registry = MagicMock()
+        mock_registry.log_prediction = AsyncMock()
+        InferenceService._registry = mock_registry
+        created_tasks, capture_create_task = _capture_created_tasks()
+
+        # Act
+        with (
+            patch.object(
+                InferenceService,
+                "_load_model",
+                new_callable=AsyncMock,
+                return_value=model,
+            ),
+            patch("asyncio.create_task", side_effect=capture_create_task),
+        ):
+            await InferenceService.predict(
+                model_id="iris-classifier",
+                features={"sepal_length": 5.1},
+                request_id=request_id,
+            )
+            await created_tasks[0]
+
+        # Assert
+        mock_registry.log_prediction.assert_awaited_once()
+        log_kwargs = mock_registry.log_prediction.await_args.kwargs
+        assert log_kwargs["request_id"] == request_id
+
     async def test_inference_error_schedules_error_metadata_log(self) -> None:
         """A model failure logs status='error' before raising InferenceError."""
         # Arrange
