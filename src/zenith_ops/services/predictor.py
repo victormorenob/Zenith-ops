@@ -52,6 +52,7 @@ class InferenceService:
         model_id: str,
         features: dict[str, float],
         idempotency_key: str | None = None,
+        request_id: uuid.UUID | None = None,
     ) -> tuple[float | list[float], ResultType, float]:
         # 1. IDEMPOTENCY CHECK — return cached response if duplicate key
         if idempotency_key and idempotency_key in cls._idempotency_cache:
@@ -98,6 +99,7 @@ class InferenceService:
                     latency_ms=latency_ms,
                     status=prediction_status,
                     error_message=error_message,
+                    request_id=request_id,
                 )
             )
 
@@ -148,7 +150,7 @@ class InferenceService:
             return
         try:
             await cls._registry.log_prediction(
-                request_id=uuid.uuid4(),
+                request_id=kwargs.get("request_id") or uuid.uuid4(),
                 model_id=kwargs["model_id"],
                 features=kwargs["features"],
                 result=kwargs["result"],

@@ -27,6 +27,7 @@ async def predict(request: PredictRequest) -> PredictResponse:
         model_id=request.model_id,
         features=request.features,
         idempotency_key=request.idempotency_key,
+        request_id=prediction_id,
     )
 
     response = PredictResponse(
