@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
@@ -175,7 +176,11 @@ class PostgresModelRegistry:
                 status="staging",
             )
             session.add(entry)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise DuplicateModelError(name, version) from exc
             await session.refresh(entry)
             return self._to_metadata(entry)
 
@@ -339,7 +344,7 @@ class PostgresModelRegistry:
                 stmt = (
                     select(ModelRegistryEntry.id)
                     .where(ModelRegistryEntry.name == model_id)
-                    .order_by(ModelRegistryEntry.version.desc())
+                    .order_by(ModelRegistryEntry.created_at.desc())
                     .limit(1)
                 )
                 result_row = await session.execute(stmt)

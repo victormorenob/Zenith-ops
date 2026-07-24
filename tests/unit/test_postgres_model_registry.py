@@ -8,6 +8,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
@@ -25,6 +27,7 @@ def mock_session() -> AsyncMock:
     session = AsyncMock(spec=AsyncSession)
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
+    session.rollback = AsyncMock()
     session.add = MagicMock()
     return session
 
@@ -277,6 +280,36 @@ class TestRegisterModel:
         mock_session.add.assert_not_called()
         mock_session.commit.assert_not_awaited()
 
+    async def test_raises_duplicate_when_unique_constraint_races_at_commit(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """A commit-time duplicate race raises DuplicateModelError."""
+        # Arrange
+        none_result = MagicMock()
+        none_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = none_result
+        mock_session.commit.side_effect = IntegrityError(
+            statement="INSERT INTO model_registry ...",
+            params={"name": "race-model", "version": "1.0.0"},
+            orig=Exception("duplicate key value violates unique constraint"),
+        )
+
+        # Act / Assert
+        with pytest.raises(DuplicateModelError) as exc_info:
+            await registry.register_model(
+                name="race-model",
+                version="1.0.0",
+                framework="sklearn",
+                artifact_path="/tmp/models/race-model/1.0.0/model.joblib",
+            )
+
+        assert exc_info.value.name == "race-model"
+        assert exc_info.value.version == "1.0.0"
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+        mock_session.rollback.assert_awaited_once()
+        mock_session.refresh.assert_not_awaited()
+
 
 # ── B.8: update_status ──────────────────────────────────────────────────
 
@@ -424,6 +457,40 @@ class TestLogPrediction:
         assert added_entry.latency_ms == 10.0
         assert added_entry.result_type == "scalar"
         assert added_entry.result is None
+
+    async def test_log_prediction_resolves_model_fk_by_created_at_desc(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """Prediction metadata should reference the registry's latest row."""
+        # Arrange
+        model_uuid = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = model_uuid
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.log_prediction(
+            request_id=uuid.uuid4(),
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+            result=0.5,
+            result_type="scalar",
+            latency_ms=10.0,
+            status="success",
+            error_message=None,
+        )
+
+        # Assert
+        executed_stmt = mock_session.execute.await_args.args[0]
+        compiled_sql = str(
+            executed_stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).lower()
+        assert "order by model_registry.created_at desc" in compiled_sql
+        assert "model_registry.version desc" not in compiled_sql
+        mock_session.commit.assert_awaited_once()
 
     async def test_log_prediction_model_not_found(
         self, registry: PostgresModelRegistry, mock_session: AsyncMock
