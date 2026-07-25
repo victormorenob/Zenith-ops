@@ -1,12 +1,30 @@
 """Unit tests for the dummy-model seed script."""
 
+import importlib.util
+from pathlib import Path
+from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from scripts import generate_dummy_model
 from zenith_ops.core.exceptions import DuplicateModelError
+
+
+def _load_seed_script() -> ModuleType:
+    """Load the seed script by path because scripts/ is not a package."""
+    script_path = Path(__file__).parents[2] / "scripts" / "generate_dummy_model.py"
+    spec = importlib.util.spec_from_file_location("generate_dummy_model", script_path)
+    if spec is None or spec.loader is None:
+        msg = f"Could not load seed script from {script_path}"
+        raise RuntimeError(msg)
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+generate_dummy_model = _load_seed_script()
 
 
 def _metadata() -> SimpleNamespace:
@@ -44,7 +62,9 @@ class TestSeedDummyModel:
             await generate_dummy_model.seed_dummy_model()
 
         # Assert
-        mock_registry_cls.assert_called_once_with(generate_dummy_model.async_session_factory)
+        mock_registry_cls.assert_called_once_with(
+            generate_dummy_model.async_session_factory
+        )
         mock_registry.register_and_build_model.assert_awaited_once_with(
             name=generate_dummy_model.MODEL_NAME,
             version=generate_dummy_model.MODEL_VERSION,
