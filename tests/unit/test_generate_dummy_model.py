@@ -2,8 +2,7 @@
 
 import importlib.util
 from pathlib import Path
-from types import ModuleType
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
