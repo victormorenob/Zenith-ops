@@ -92,6 +92,25 @@ class TestConfigureSentry:
 class TestCaptureException:
     """Tests for ``capture_exception()`` — no-op when Sentry is inactive."""
 
+    def test_capture_exception_noop_when_client_is_none(self) -> None:
+        # Arrange
+        from zenith_ops.core.sentry_config import capture_exception
+
+        # Act
+        with (
+            patch(
+                "zenith_ops.core.sentry_config.sentry_sdk.get_client",
+                return_value=None,
+            ),
+            patch(
+                "zenith_ops.core.sentry_config.sentry_sdk.capture_exception"
+            ) as mock_capture,
+        ):
+            capture_exception(RuntimeError("test"))
+
+        # Assert
+        mock_capture.assert_not_called()
+
     def test_capture_exception_noop_when_client_inactive(self) -> None:
         # Arrange
         from zenith_ops.core.sentry_config import capture_exception
@@ -176,3 +195,22 @@ class TestEnrichEventWithCorrelationId:
         # Assert
         assert enriched is event
         assert "tags" not in enriched
+
+    def test_preserves_non_dict_tags_when_correlation_id_is_bound(self) -> None:
+        # Arrange
+        from structlog.contextvars import bind_contextvars, clear_contextvars
+
+        from zenith_ops.core.sentry_config import _enrich_event_with_correlation_id
+
+        bind_contextvars(correlation_id="abc-123")
+        event: dict[str, object] = {"tags": ["existing"]}
+
+        try:
+            # Act
+            enriched = _enrich_event_with_correlation_id(event, {})
+
+            # Assert
+            assert enriched is event
+            assert enriched["tags"] == ["existing"]
+        finally:
+            clear_contextvars()
