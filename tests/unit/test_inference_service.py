@@ -204,6 +204,39 @@ class TestModelNotFound:
             )
 
 
+class TestLoadModel:
+    """Model loading resolves artifact paths through the configured registry."""
+
+    async def test_load_model_bootstraps_postgres_registry_when_unset(self) -> None:
+        """The default production path should lazily await get_registry()."""
+        # Arrange
+        model_path = Path("/tmp/models/iris-classifier/1.0.0/model.joblib")
+        loaded_model = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.resolve_path = AsyncMock(return_value=model_path)
+
+        # Act
+        with (
+            patch(
+                "zenith_ops.core.model_registry_db.get_registry",
+                new_callable=AsyncMock,
+                return_value=mock_registry,
+            ) as mock_get_registry,
+            patch(
+                "zenith_ops.services.predictor.joblib.load",
+                return_value=loaded_model,
+            ) as mock_load,
+        ):
+            model = await InferenceService._load_model("iris-classifier")
+
+        # Assert
+        assert model is loaded_model
+        assert InferenceService._registry is mock_registry
+        mock_get_registry.assert_awaited_once_with()
+        mock_registry.resolve_path.assert_awaited_once_with("iris-classifier")
+        mock_load.assert_called_once_with(model_path)
+
+
 class TestTimeout:
     """Inference exceeding the timeout raises InferenceTimeoutError."""
 
@@ -361,6 +394,26 @@ class TestPredictionMetadataLogging:
 
         # Assert
         mock_registry.log_prediction.assert_awaited_once()
+
+    async def test_safe_log_prediction_skips_registry_without_logging(self) -> None:
+        """Legacy registries without log_prediction should be ignored safely."""
+        # Arrange
+        mock_registry = MagicMock(spec_set=["resolve_path"])
+        InferenceService._registry = mock_registry
+
+        # Act
+        await InferenceService._safe_log_prediction(
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+            result=0.5,
+            result_type=ResultType.SCALAR,
+            latency_ms=1.0,
+            status="success",
+            error_message=None,
+        )
+
+        # Assert
+        assert not hasattr(mock_registry, "log_prediction")
 
 
 class TestResultType:
