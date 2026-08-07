@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
@@ -49,16 +50,15 @@ class PostgresModelRegistry:
     async def list_models(self) -> list[ModelSummary]:
         """Latest version per model name, excluding archived models.
 
-        Uses a subquery to find the maximum version per name, then joins
-        back to the full row to extract metadata. Results are ordered by
-        model name.
+        Uses a subquery to find the newest row per name, then joins back
+        to the full row to extract metadata. Results are ordered by model name.
         """
         async with self._session_factory() as session:
-            # Subquery: latest version per name (exclude archived)
-            latest_version_subq = (
+            # Subquery: newest registration per name (exclude archived).
+            latest_created_at_subq = (
                 select(
                     ModelRegistryEntry.name,
-                    func.max(ModelRegistryEntry.version).label("max_version"),
+                    func.max(ModelRegistryEntry.created_at).label("max_created_at"),
                 )
                 .where(ModelRegistryEntry.status != "archived")
                 .group_by(ModelRegistryEntry.name)
@@ -67,10 +67,11 @@ class PostgresModelRegistry:
             stmt = (
                 select(ModelRegistryEntry)
                 .join(
-                    latest_version_subq,
+                    latest_created_at_subq,
                     and_(
-                        ModelRegistryEntry.name == latest_version_subq.c.name,
-                        ModelRegistryEntry.version == latest_version_subq.c.max_version,
+                        ModelRegistryEntry.name == latest_created_at_subq.c.name,
+                        ModelRegistryEntry.created_at
+                        == latest_created_at_subq.c.max_created_at,
                     ),
                 )
                 .order_by(ModelRegistryEntry.name)
@@ -89,7 +90,7 @@ class PostgresModelRegistry:
             stmt = (
                 select(ModelRegistryEntry)
                 .where(ModelRegistryEntry.name == model_id)
-                .order_by(ModelRegistryEntry.version.desc())
+                .order_by(ModelRegistryEntry.created_at.desc())
                 .limit(1)
             )
             result = await session.execute(stmt)
@@ -175,7 +176,11 @@ class PostgresModelRegistry:
                 status="staging",
             )
             session.add(entry)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                raise DuplicateModelError(name, version) from None
             await session.refresh(entry)
             return self._to_metadata(entry)
 
@@ -339,7 +344,7 @@ class PostgresModelRegistry:
                 stmt = (
                     select(ModelRegistryEntry.id)
                     .where(ModelRegistryEntry.name == model_id)
-                    .order_by(ModelRegistryEntry.version.desc())
+                    .order_by(ModelRegistryEntry.created_at.desc())
                     .limit(1)
                 )
                 result_row = await session.execute(stmt)
