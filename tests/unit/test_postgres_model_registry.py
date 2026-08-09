@@ -347,9 +347,12 @@ class TestRegisterAndBuildModel:
         self, registry: PostgresModelRegistry, mock_session: AsyncMock
     ) -> None:
         """register_and_build_model builds model, dumps it, and calls register_model."""
+        # Arrange
         none_result = MagicMock()
         none_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = none_result
+        input_schema = {"type": "object", "required": ["sepal_length"]}
+        output_schema = {"type": "number"}
 
         def _refresh_side_effect(obj) -> None:
             obj.id = "550e8400-e29b-41d4-a716-446655440000"
@@ -357,6 +360,7 @@ class TestRegisterAndBuildModel:
 
         mock_session.refresh.side_effect = _refresh_side_effect
 
+        # Act
         metadata = await registry.register_and_build_model(
             name="new-model",
             version="1.0.0",
@@ -365,20 +369,36 @@ class TestRegisterAndBuildModel:
             description="Built from model_type",
             metrics={"accuracy": 0.99},
             tags=["auto"],
+            input_schema=input_schema,
+            output_schema=output_schema,
         )
 
+        # Assert
         assert metadata.name == "new-model"
         assert metadata.version == "1.0.0"
         assert metadata.status == "staging"
         mock_session.add.assert_called_once()
+        added_entry: ModelRegistryEntry = mock_session.add.call_args.args[0]
+        assert added_entry.description == "Built from model_type"
+        assert added_entry.metrics == {"accuracy": 0.99}
+        assert added_entry.tags == ["auto"]
+        assert added_entry.input_schema == input_schema
+        assert added_entry.output_schema == output_schema
         mock_session.commit.assert_awaited_once()
 
     async def test_unknown_model_type_raises_value_error(
-        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+        self,
+        registry: PostgresModelRegistry,
+        mock_session: AsyncMock,
+        mock_session_factory: AsyncMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """An unknown model_type must propagate ValueError."""
-        import pytest
+        """An unknown model_type must fail before artifact or DB writes."""
+        # Arrange
+        monkeypatch.chdir(tmp_path)
 
+        # Act / Assert
         with pytest.raises(ValueError, match="desconocido"):
             await registry.register_and_build_model(
                 name="bad-model",
@@ -386,6 +406,11 @@ class TestRegisterAndBuildModel:
                 framework="sklearn",
                 model_type="nonexistent_type",
             )
+        assert not (tmp_path / "models").exists()
+        mock_session_factory.assert_not_called()
+        mock_session.execute.assert_not_awaited()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_awaited()
 
 
 # ── log_prediction (Phase D) ──────────────────────────────────────────────
