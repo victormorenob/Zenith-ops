@@ -254,22 +254,36 @@ class TestRegisterModelEndpoint:
 
     def test_invalid_payload_returns_422(self) -> None:
         """Missing required fields returns 422."""
+        # Arrange
         reg = _mock_registry()
+        reg.register_and_build_model = AsyncMock()  # type: ignore[misc]
+        reg.register_model = AsyncMock()  # type: ignore[misc]
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.post(
             "/v1/models/register",
             json={},  # missing name, version, framework, model_type/artifact_path
         )
+
+        # Assert
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        reg.register_and_build_model.assert_not_awaited()  # type: ignore[attr-defined]
+        reg.register_model.assert_not_awaited()  # type: ignore[attr-defined]
 
     def test_mutual_exclusivity_returns_422(self) -> None:
         """Both model_type and artifact_path returns 422."""
+        # Arrange
         reg = _mock_registry()
+        reg.register_and_build_model = AsyncMock()  # type: ignore[misc]
+        reg.register_model = AsyncMock()  # type: ignore[misc]
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.post(
             "/v1/models/register",
             json={
@@ -280,7 +294,36 @@ class TestRegisterModelEndpoint:
                 "artifact_path": "models/test/model.joblib",
             },
         )
+
+        # Assert
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        reg.register_and_build_model.assert_not_awaited()  # type: ignore[attr-defined]
+        reg.register_model.assert_not_awaited()  # type: ignore[attr-defined]
+
+    def test_missing_model_source_returns_422_without_registry_write(self) -> None:
+        """A payload without model_type/artifact_path returns 422 before writes."""
+        # Arrange
+        reg = _mock_registry()
+        reg.register_and_build_model = AsyncMock()  # type: ignore[misc]
+        reg.register_model = AsyncMock()  # type: ignore[misc]
+        app.dependency_overrides[get_registry] = lambda: reg
+
+        client = TestClient(app)
+
+        # Act
+        response = client.post(
+            "/v1/models/register",
+            json={
+                "name": "test",
+                "version": "1.0.0",
+                "framework": "sklearn",
+            },
+        )
+
+        # Assert
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        reg.register_and_build_model.assert_not_awaited()  # type: ignore[attr-defined]
+        reg.register_model.assert_not_awaited()  # type: ignore[attr-defined]
 
 
 # ── PATCH /v1/models/{id}/status ────────────────────────────────────────
@@ -331,12 +374,19 @@ class TestUpdateStatusEndpoint:
 
     def test_invalid_status_returns_422(self) -> None:
         """Invalid status value returns 422."""
+        # Arrange
         reg = _mock_registry()
+        reg.update_status = AsyncMock()  # type: ignore[misc]
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.patch(
             "/v1/models/550e8400-e29b-41d4-a716-446655440000/status",
             json={"status": "INVALID"},
         )
+
+        # Assert
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        reg.update_status.assert_not_awaited()  # type: ignore[attr-defined]
