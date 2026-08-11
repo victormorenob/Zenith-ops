@@ -116,6 +116,12 @@ class TestUpdateStatusRequest:
         with pytest.raises(ValidationError):
             UpdateStatusRequest(status="invalid")
 
+    def test_legacy_active_status_raises(self) -> None:
+        """The legacy 'active' status must not be accepted by the API schema."""
+        # Arrange / Act / Assert
+        with pytest.raises(ValidationError):
+            UpdateStatusRequest(status="active")
+
     def test_empty_status_raises(self) -> None:
         """Empty string must raise."""
         with pytest.raises(ValidationError):

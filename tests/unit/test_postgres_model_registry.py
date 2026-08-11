@@ -322,6 +322,25 @@ class TestUpdateStatus:
                 status="invalid",
             )
 
+    async def test_rejects_legacy_active_status_without_db_write(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """The legacy 'active' status must fail before any DB write."""
+        # Arrange
+        model_uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="active"):
+            await registry.update_status(
+                model_uuid=model_uuid,
+                status="active",
+            )
+
+        mock_session.execute.assert_not_awaited()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_awaited()
+        mock_session.refresh.assert_not_awaited()
+
     async def test_raises_not_found_for_unknown_uuid(
         self, registry: PostgresModelRegistry, mock_session: AsyncMock
     ) -> None:
