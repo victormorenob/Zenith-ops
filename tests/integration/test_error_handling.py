@@ -89,6 +89,17 @@ class TestUnhandledException:
         assert "X-Correlation-ID" in response.headers
         assert re.match(UUID_V4_REGEX, response.headers["X-Correlation-ID"])
 
+    def test_unhandled_error_logs_matching_request_completed_status(self) -> None:
+        """Unhandled RuntimeError should log the same 500 returned to clients."""
+        with structlog.testing.capture_logs() as cap:
+            response = client.get("/test/raise-error")
+
+        assert response.status_code == 500
+        req_logs = [e for e in cap if e.get("event") == "request_completed"]
+        assert len(req_logs) == 1
+        assert req_logs[0]["status"] == response.status_code
+        assert req_logs[0]["log_level"] == "error"
+
 
 class TestDomainHandlerPrecedence:
     """Task 1.4: Domain handlers still take precedence over catch-all."""

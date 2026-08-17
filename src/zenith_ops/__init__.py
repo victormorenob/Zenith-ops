@@ -138,7 +138,7 @@ async def log_requests(
         return response
     finally:
         duration_ms = (time.monotonic() - start) * 1000
-        status_code = response.status_code if "response" in locals() else 503
+        status_code = response.status_code if "response" in locals() else 500
         logger = structlog.get_logger("zenith_ops.middleware")
         log_kwargs = {
             "method": request.method,
