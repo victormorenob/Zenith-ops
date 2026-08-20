@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from zenith_ops.core.exceptions import DuplicateModelError, ModelNotFoundError
@@ -67,6 +68,16 @@ def _make_entry(
     entry.updated_at = None
     entry.deployed_at = None
     return entry
+
+
+def _compile_postgres_sql(statement: object) -> str:
+    """Render SQLAlchemy statements with PostgreSQL syntax for assertions."""
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
 
 
 # ── B.3: Constructor ────────────────────────────────────────────────────
@@ -143,6 +154,26 @@ class TestListModels:
         # filters archived, so the archived entry is excluded.
         mock_session.execute.assert_awaited_once()
 
+    async def test_query_selects_latest_by_created_at_not_version(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """Latest model per name is selected by created_at DESC per SPEC-002."""
+        # Arrange
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.list_models()
+
+        # Assert
+        executed_stmt = mock_session.execute.await_args.args[0]
+        compiled_sql = _compile_postgres_sql(executed_stmt)
+        assert "row_number() OVER" in compiled_sql
+        assert "PARTITION BY model_registry.name" in compiled_sql
+        assert "ORDER BY model_registry.created_at DESC" in compiled_sql
+        assert "max(" not in compiled_sql.lower()
+
 
 # ── B.5: get_model ──────────────────────────────────────────────────────
 
@@ -178,6 +209,26 @@ class TestGetModel:
 
         with pytest.raises(ModelNotFoundError, match="unknown"):
             await registry.get_model("unknown")
+
+    async def test_query_orders_by_created_at_desc(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """Detail lookup chooses the newest registered row, not max version text."""
+        # Arrange
+        entry = _make_entry()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = entry
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.get_model("iris-classifier")
+
+        # Assert
+        executed_stmt = mock_session.execute.await_args.args[0]
+        compiled_sql = _compile_postgres_sql(executed_stmt)
+        assert "WHERE model_registry.name = 'iris-classifier'" in compiled_sql
+        assert "ORDER BY model_registry.created_at DESC" in compiled_sql
+        assert "model_registry.version DESC" not in compiled_sql
 
 
 # ── B.6: resolve_path ───────────────────────────────────────────────────
@@ -465,6 +516,35 @@ class TestLogPrediction:
             status="error",
             error_message="timeout",
         )
+
+    async def test_log_prediction_resolves_latest_fk_by_created_at(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """Prediction metadata links to newest created model row for a name."""
+        # Arrange
+        model_uuid = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = model_uuid
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        await registry.log_prediction(
+            request_id=uuid.uuid4(),
+            model_id="iris-classifier",
+            features={"sepal_length": 5.1},
+            result=0.5,
+            result_type="scalar",
+            latency_ms=10.0,
+            status="success",
+            error_message=None,
+        )
+
+        # Assert
+        executed_stmt = mock_session.execute.await_args.args[0]
+        compiled_sql = _compile_postgres_sql(executed_stmt)
+        assert "WHERE model_registry.name = 'iris-classifier'" in compiled_sql
+        assert "ORDER BY model_registry.created_at DESC" in compiled_sql
+        assert "model_registry.version DESC" not in compiled_sql
 
 
 # ── DI factory ──────────────────────────────────────────────────────────
