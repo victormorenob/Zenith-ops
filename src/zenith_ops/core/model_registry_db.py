@@ -63,8 +63,7 @@ class PostgresModelRegistry:
                         order_by=ModelRegistryEntry.created_at.desc(),
                     )
                     .label("rank"),
-                )
-                .where(ModelRegistryEntry.status != "archived")
+                ).where(ModelRegistryEntry.status != "archived")
             ).subquery()
 
             stmt = (
