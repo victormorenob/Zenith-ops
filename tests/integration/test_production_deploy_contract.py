@@ -5,8 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOST_GATEWAY_ENTRY = '"host.docker.internal:host-gateway"'
 PROD_DATABASE_URL = (
-    "postgresql+asyncpg://zenith:CHANGE_ME@host.docker.internal:5432/"
-    "ZenithOpsDatabase"
+    "postgresql+asyncpg://zenith:CHANGE_ME@host.docker.internal:5432/ZenithOpsDatabase"
 )
 
 
@@ -172,7 +171,9 @@ class TestContinuousDeploymentContract:
         pull_command = (
             "docker compose -f infra/docker/docker-compose.prod.yml pull migrate app"
         )
-        migrate_command = "docker compose -f infra/docker/docker-compose.prod.yml up migrate"
+        migrate_command = (
+            "docker compose -f infra/docker/docker-compose.prod.yml up migrate"
+        )
         app_command = "docker compose -f infra/docker/docker-compose.prod.yml up -d app"
 
         # Act
