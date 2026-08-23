@@ -66,7 +66,10 @@ class TestConfigureSentry:
         self, mock_init: MagicMock
     ) -> None:
         # Arrange
-        from zenith_ops.core.sentry_config import configure_sentry
+        from zenith_ops.core.sentry_config import (
+            _enrich_event_with_correlation_id,
+            configure_sentry,
+        )
 
         settings = Settings(
             DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",  # type: ignore[arg-type]
@@ -86,7 +89,11 @@ class TestConfigureSentry:
         assert call_kwargs["environment"] == "staging"
         assert call_kwargs["traces_sample_rate"] == 0.25
         assert call_kwargs["send_default_pii"] is False
-        assert len(call_kwargs["integrations"]) == 2
+        assert call_kwargs["before_send"] is _enrich_event_with_correlation_id
+        integration_names = {
+            type(integration).__name__ for integration in call_kwargs["integrations"]
+        }
+        assert integration_names == {"FastApiIntegration", "StarletteIntegration"}
 
 
 class TestCaptureException:
