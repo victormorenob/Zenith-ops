@@ -44,6 +44,21 @@ class PostgresModelRegistry:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
+    async def _raise_if_duplicate_model(
+        self,
+        session: AsyncSession,
+        name: str,
+        version: str,
+    ) -> None:
+        existing = await session.execute(
+            select(ModelRegistryEntry).where(
+                ModelRegistryEntry.name == name,
+                ModelRegistryEntry.version == version,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise DuplicateModelError(name, version)
+
     # ── Protocol: read methods ──────────────────────────────────────────
 
     async def list_models(self) -> list[ModelSummary]:
@@ -153,14 +168,7 @@ class PostgresModelRegistry:
         """
         async with self._session_factory() as session:
             # Duplicate check — (name, version) is UNIQUE
-            existing = await session.execute(
-                select(ModelRegistryEntry).where(
-                    ModelRegistryEntry.name == name,
-                    ModelRegistryEntry.version == version,
-                )
-            )
-            if existing.scalar_one_or_none():
-                raise DuplicateModelError(name, version)
+            await self._raise_if_duplicate_model(session, name, version)
 
             entry = ModelRegistryEntry(
                 name=name,
@@ -272,6 +280,9 @@ class PostgresModelRegistry:
         DuplicateModelError
             If ``(name, version)`` already exists.
         """
+        async with self._session_factory() as session:
+            await self._raise_if_duplicate_model(session, name, version)
+
         from pathlib import Path
 
         import joblib

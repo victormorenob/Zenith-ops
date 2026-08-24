@@ -377,8 +377,12 @@ class TestRegisterAndBuildModel:
         self, registry: PostgresModelRegistry, mock_session: AsyncMock
     ) -> None:
         """An unknown model_type must propagate ValueError."""
-        import pytest
+        # Arrange
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = result_mock
 
+        # Act / Assert
         with pytest.raises(ValueError, match="desconocido"):
             await registry.register_and_build_model(
                 name="bad-model",
@@ -386,6 +390,39 @@ class TestRegisterAndBuildModel:
                 framework="sklearn",
                 model_type="nonexistent_type",
             )
+
+    async def test_duplicate_model_type_does_not_touch_artifact(
+        self, registry: PostgresModelRegistry, mock_session: AsyncMock
+    ) -> None:
+        """A duplicate generated model must not overwrite an existing artifact."""
+        # Arrange
+        existing_entry = _make_entry(name="dup-model", version="1.0.0")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = existing_entry
+        mock_session.execute.return_value = result_mock
+
+        # Act
+        with (
+            patch("zenith_ops.core.model_builders.build_model") as mock_build_model,
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("joblib.dump") as mock_dump,
+            pytest.raises(DuplicateModelError) as exc_info,
+        ):
+            await registry.register_and_build_model(
+                name="dup-model",
+                version="1.0.0",
+                framework="sklearn",
+                model_type="dummy_iris",
+            )
+
+        # Assert
+        assert exc_info.value.name == "dup-model"
+        assert exc_info.value.version == "1.0.0"
+        mock_build_model.assert_not_called()
+        mock_mkdir.assert_not_called()
+        mock_dump.assert_not_called()
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_awaited()
 
 
 # ── log_prediction (Phase D) ──────────────────────────────────────────────
