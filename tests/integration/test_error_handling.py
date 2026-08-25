@@ -8,11 +8,13 @@ Tests:
 """
 
 import re
+from unittest.mock import patch
 
 import structlog
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
+from zenith_ops.core.exceptions import Zenitherror
 
 UUID_V4_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
@@ -104,6 +106,38 @@ class TestDomainHandlerPrecedence:
         assert body["error"] == "model_not_found", (
             "Domain handler must run, not catch-all"
         )
+
+
+class TestZenitherrorFallbackHandler:
+    """Generic domain fallback keeps future Zenitherror contracts structured."""
+
+    def test_handlerless_zenitherror_returns_domain_message_not_catch_all(
+        self,
+    ) -> None:
+        """Unhandled Zenitherror subclasses use the domain fallback handler."""
+
+        class FutureDomainError(Zenitherror):
+            """Test-only domain error without a dedicated HTTP handler."""
+
+        # Arrange
+        with patch(
+            "zenith_ops.api.v1.predict.InferenceService.predict",
+            side_effect=FutureDomainError("registry unavailable"),
+        ):
+            # Act
+            response = client.post(
+                "/v1/predict",
+                json={"model_id": "iris-classifier", "features": {"x": 1.0}},
+            )
+
+        # Assert
+        assert response.status_code == 500
+        assert response.json() == {
+            "error": "internal_error",
+            "message": "registry unavailable",
+        }
+        assert "X-Correlation-ID" in response.headers
+        assert re.match(UUID_V4_REGEX, response.headers["X-Correlation-ID"])
 
 
 # ── Test-only endpoint for triggering unhandled exceptions ──────────
