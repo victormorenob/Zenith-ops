@@ -14,7 +14,7 @@ import structlog
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
-from zenith_ops.core.exceptions import Zenitherror
+from zenith_ops.core.exceptions import ModelNotFoundError, Zenitherror
 
 UUID_V4_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
@@ -37,10 +37,18 @@ class TestCorrelationIdOnError:
 
     def test_header_present_on_domain_404(self) -> None:
         """Domain 404 (unknown model) should include X-Correlation-ID header."""
-        response = client.post(
-            "/v1/predict",
-            json={"model_id": "nonexistent-model", "features": {"x": 1.0}},
-        )
+        # Arrange
+        with patch(
+            "zenith_ops.api.v1.predict.InferenceService.predict",
+            side_effect=ModelNotFoundError("nonexistent-model"),
+        ):
+            # Act
+            response = client.post(
+                "/v1/predict",
+                json={"model_id": "nonexistent-model", "features": {"x": 1.0}},
+            )
+
+        # Assert
         assert response.status_code == 404
         assert "X-Correlation-ID" in response.headers
         assert re.match(UUID_V4_REGEX, response.headers["X-Correlation-ID"])
@@ -97,10 +105,18 @@ class TestDomainHandlerPrecedence:
 
     def test_model_not_found_returns_404_not_internal_error(self) -> None:
         """ModelNotFoundError should return 404, not catch-all 500."""
-        response = client.post(
-            "/v1/predict",
-            json={"model_id": "nonexistent-model", "features": {"x": 1.0}},
-        )
+        # Arrange
+        with patch(
+            "zenith_ops.api.v1.predict.InferenceService.predict",
+            side_effect=ModelNotFoundError("nonexistent-model"),
+        ):
+            # Act
+            response = client.post(
+                "/v1/predict",
+                json={"model_id": "nonexistent-model", "features": {"x": 1.0}},
+            )
+
+        # Assert
         assert response.status_code == 404
         body = response.json()
         assert body["error"] == "model_not_found", (
