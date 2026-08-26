@@ -89,17 +89,24 @@ class TestListModelsEndpoint:
 
     def test_empty_list(self) -> None:
         """When no models exist, returns 200 with empty list."""
+        # Arrange
         reg = _mock_registry()
         reg.list_models = AsyncMock(return_value=[])  # type: ignore[misc]
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.get("/v1/models")
+
+        # Assert
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"models": []}
+        reg.list_models.assert_awaited_once_with()
 
     def test_returns_model_summaries(self) -> None:
         """When models exist, returns 200 with ModelSummary list."""
+        # Arrange
         reg = _mock_registry()
         summary = ModelSummary(
             model_id="iris-classifier",
@@ -114,12 +121,17 @@ class TestListModelsEndpoint:
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.get("/v1/models")
+
+        # Assert
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert len(body["models"]) == 1
         assert body["models"][0]["model_id"] == "iris-classifier"
         assert body["models"][0]["latest_version"] == "1.0.0"
+        reg.list_models.assert_awaited_once_with()
 
 
 # ── GET /v1/models/{model_id} ───────────────────────────────────────────
@@ -130,6 +142,7 @@ class TestGetModelEndpoint:
 
     def test_returns_metadata(self) -> None:
         """Existing model returns 200 with full ModelMetadata."""
+        # Arrange
         reg = _mock_registry()
         meta = ModelMetadata(
             model_id="iris-classifier",
@@ -144,14 +157,20 @@ class TestGetModelEndpoint:
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.get("/v1/models/iris-classifier")
+
+        # Assert
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == "iris-classifier"
         assert body["version"] == "1.0.0"
+        reg.get_model.assert_awaited_once_with("iris-classifier")
 
     def test_unknown_returns_404(self) -> None:
         """Unknown model_id returns 404 with model_not_found error."""
+        # Arrange
         reg = _mock_registry()
         reg.get_model = AsyncMock(  # type: ignore[misc]
             side_effect=ModelNotFoundError("unknown")
@@ -159,10 +178,15 @@ class TestGetModelEndpoint:
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.get("/v1/models/unknown")
+
+        # Assert
         assert response.status_code == status.HTTP_404_NOT_FOUND
         body = response.json()
         assert body["error"] == "model_not_found"
+        reg.get_model.assert_awaited_once_with("unknown")
 
 
 # ── POST /v1/models/register ────────────────────────────────────────────
@@ -291,6 +315,7 @@ class TestUpdateStatusEndpoint:
 
     def test_update_status_returns_200(self) -> None:
         """Valid status update returns 200 with updated metadata."""
+        # Arrange
         reg = _mock_registry()
         meta = ModelMetadata(
             model_id="test",
@@ -304,30 +329,43 @@ class TestUpdateStatusEndpoint:
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+        model_uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+        # Act
         response = client.patch(
-            "/v1/models/550e8400-e29b-41d4-a716-446655440000/status",
+            f"/v1/models/{model_uuid}/status",
             json={"status": "production"},
         )
+
+        # Assert
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["status"] == "production"
+        reg.update_status.assert_awaited_once_with(model_uuid, "production")
 
     def test_unknown_uuid_returns_404(self) -> None:
         """Non-existent UUID returns 404 with model_not_found error."""
+        # Arrange
         reg = _mock_registry()
+        model_uuid = "550e8400-e29b-41d4-a716-446655440000"
         reg.update_status = AsyncMock(  # type: ignore[misc]
-            side_effect=ModelNotFoundError("550e8400-e29b-41d4-a716-446655440000")
+            side_effect=ModelNotFoundError(model_uuid)
         )
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
+
+        # Act
         response = client.patch(
-            "/v1/models/550e8400-e29b-41d4-a716-446655440000/status",
+            f"/v1/models/{model_uuid}/status",
             json={"status": "production"},
         )
+
+        # Assert
         assert response.status_code == status.HTTP_404_NOT_FOUND
         body = response.json()
         assert body["error"] == "model_not_found"
+        reg.update_status.assert_awaited_once_with(model_uuid, "production")
 
     def test_invalid_status_returns_422(self) -> None:
         """Invalid status value returns 422."""
