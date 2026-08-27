@@ -100,6 +100,45 @@ async def test_list_models_return_summary_wrong(tmp_path: Path) -> None:
     assert models == []
 
 
+async def test_scan_skips_files_and_versions_without_metadata(tmp_path: Path) -> None:
+    """Partial model artifacts must not prevent valid versions from loading."""
+    # Arrange
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    (models_dir / "README.txt").write_text("not a model directory")
+
+    model_root = models_dir / "iris-classifier"
+    valid_version_dir = model_root / "1.0.0"
+    incomplete_version_dir = model_root / "2.0.0"
+    valid_version_dir.mkdir(parents=True)
+    incomplete_version_dir.mkdir(parents=True)
+    Path(valid_version_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "model_id": "iris-classifier",
+                "name": "Iris Classifier",
+                "version": "1.0.0",
+                "framework": "sklearn",
+                "status": "active",
+                "created_at": "2026-06-15T12:00:00Z",
+                "tags": ["iris"],
+            }
+        )
+    )
+
+    registry = FileBasedModelRegistry(models_dir)
+
+    # Act
+    registry.scan()
+    models = await registry.list_models()
+    model = await registry.get_model("iris-classifier")
+
+    # Assert
+    assert [summary.model_id for summary in models] == ["iris-classifier"]
+    assert models[0].latest_version == "1.0.0"
+    assert model.version == "1.0.0"
+
+
 async def test_get_model_returns_detail(tmp_path: Path) -> None:
     model_dir = tmp_path / "models" / "iris-classifier" / "1.0.0"
     model_dir.mkdir(parents=True)
