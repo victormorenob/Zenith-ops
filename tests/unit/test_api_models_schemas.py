@@ -1,6 +1,7 @@
-"""Unit tests for API schemas (Phase C — API Wiring).
+"""Unit tests for API schemas.
 
 Tests cover:
+  - PredictRequest / PredictResponse: prediction API validation contract
   - RegisterModelRequest: mutual exclusivity of model_type / artifact_path
   - UpdateStatusRequest: valid status regex
   - ModelResponse: contains model field
@@ -8,14 +9,98 @@ Tests cover:
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
+from zenith_ops.api.schemas.predict import PredictRequest, PredictResponse
 from zenith_ops.api.v1.schemas.models import (
     RegisterModelRequest,
     RegisterModelResponse,
     UpdateStatusRequest,
 )
+from zenith_ops.services.predictor import ResultType
+
+
+class TestPredictRequest:
+    """PredictRequest validates the prediction input contract."""
+
+    def test_valid_numeric_features_with_idempotency_key(self) -> None:
+        """Numeric feature mappings and idempotency keys are accepted."""
+        # Arrange
+        features = {"sepal_length": 5.1, "petal_width": 0.2}
+
+        # Act
+        req = PredictRequest(
+            model_id="iris-classifier",
+            features=features,
+            idempotency_key="retry-123",
+        )
+
+        # Assert
+        assert req.model_id == "iris-classifier"
+        assert req.features == features
+        assert req.idempotency_key == "retry-123"
+
+    def test_empty_features_raise_field_validation_error(self) -> None:
+        """Empty feature dictionaries fail before inference can run."""
+        # Arrange
+        features: dict[str, float] = {}
+
+        # Act
+        with pytest.raises(ValidationError) as exc_info:
+            PredictRequest(model_id="iris-classifier", features=features)
+
+        # Assert
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("features",)
+        assert errors[0]["type"] == "too_short"
+
+    def test_non_numeric_feature_value_raises_validation_error(self) -> None:
+        """Feature values must be parseable as floats."""
+        # Arrange
+        features = {"sepal_length": "not-a-number"}
+
+        # Act
+        with pytest.raises(ValidationError) as exc_info:
+            PredictRequest(
+                model_id="iris-classifier",
+                features=features,
+            )
+
+        # Assert
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("features", "sepal_length")
+        assert errors[0]["type"] == "float_parsing"
+
+
+class TestPredictResponse:
+    """PredictResponse serializes the public prediction response contract."""
+
+    def test_serializes_result_type_enum_for_json_response(self) -> None:
+        """FastAPI JSON mode returns result_type as its public string value."""
+        # Arrange
+        prediction_id = uuid.UUID("550e8400-e29b-41d4-a716-446655440000")
+
+        # Act
+        response = PredictResponse(
+            prediction_id=prediction_id,
+            model_id="iris-classifier",
+            result=0.0,
+            result_type=ResultType.SCALAR,
+            latency_ms=12.5,
+        )
+        serialized = response.model_dump(mode="json")
+
+        # Assert
+        assert serialized == {
+            "prediction_id": "550e8400-e29b-41d4-a716-446655440000",
+            "model_id": "iris-classifier",
+            "result": 0.0,
+            "result_type": "scalar",
+            "latency_ms": 12.5,
+        }
 
 
 class TestRegisterModelRequest:
