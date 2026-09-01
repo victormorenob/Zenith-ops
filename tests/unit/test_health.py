@@ -5,7 +5,9 @@ external dependencies to verify zero-I/O behavior for liveness.
 """
 
 import re
+import tomllib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import status
@@ -20,6 +22,7 @@ client = TestClient(app)
 
 
 ISO_8601_REGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestLiveEndpoint:
@@ -38,6 +41,18 @@ class TestLiveEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["version"] == get_version()
+
+    def test_version_matches_pyproject_metadata(self) -> None:
+        """Health version must stay aligned with pyproject metadata."""
+        # Arrange
+        pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+        expected_version = pyproject["project"]["version"]
+
+        # Act
+        actual_version = get_version()
+
+        # Assert
+        assert actual_version == expected_version
 
     def test_iso_8601_timestamp(self) -> None:
         """Timestamp should be ISO 8601 format in UTC."""
