@@ -8,9 +8,12 @@ plus the correlation_id middleware.
 import json
 import logging
 import re
+from unittest.mock import patch
 
 import pytest
 import structlog
+from fastapi import Request
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 from zenith_ops import app
@@ -225,3 +228,49 @@ class TestMiddleware:
         assert log["duration_ms"] >= 0
         assert isinstance(log["correlation_id"], str)
         assert re.match(UUID_V4_REGEX, log["correlation_id"])
+
+
+class TestCatchAllMiddleware:
+    """Tests for the outer catch-all middleware exception path."""
+
+    async def test_unhandled_exception_clears_bound_correlation_context(self) -> None:
+        """Unhandled 500 responses must not leak contextvars after completion."""
+        # Arrange
+        from structlog.contextvars import (
+            bind_contextvars,
+            clear_contextvars,
+            get_contextvars,
+        )
+
+        from zenith_ops import catch_all
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/test/raise-error",
+                "headers": [],
+                "query_string": b"",
+                "server": ("testserver", 80),
+                "scheme": "http",
+                "client": ("testclient", 50000),
+            }
+        )
+        request.state.correlation_id = "cid-123"
+        bind_contextvars(correlation_id="stale-id")
+
+        async def raise_unhandled(_: Request) -> Response:
+            raise RuntimeError("boom")
+
+        try:
+            # Act
+            with patch("zenith_ops.capture_exception"):
+                response = await catch_all(request, raise_unhandled)
+            context_after_response = get_contextvars()
+        finally:
+            clear_contextvars()
+
+        # Assert
+        assert response.status_code == 500
+        assert response.headers["X-Correlation-ID"] == "cid-123"
+        assert "correlation_id" not in context_after_response
