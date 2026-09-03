@@ -32,6 +32,20 @@ class TestModelBuilders:
         result = model.predict({"sepal_length": 5.1})
         assert result == 0.0
 
+    def test_dummy_iris_predict_proba_returns_three_class_distribution(self) -> None:
+        """Dummy Iris model returns the expected stable probability vector."""
+        # Arrange
+        from zenith_ops.core.dummy_model import DummyIrisClassifier
+
+        model = DummyIrisClassifier()
+
+        # Act
+        probabilities = model.predict_proba({"sepal_length": 5.1})
+
+        # Assert
+        assert probabilities == [0.98, 0.01, 0.01]
+        assert sum(probabilities) == pytest.approx(1.0)
+
     def test_unknown_type_raises_value_error(self) -> None:
         """An unrecognized model type raises ValueError."""
         with pytest.raises(ValueError, match="desconocido"):
