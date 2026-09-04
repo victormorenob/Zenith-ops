@@ -164,6 +164,30 @@ class TestEnrichEventWithCorrelationId:
         finally:
             clear_contextvars()
 
+    def test_preserves_existing_tags_when_adding_correlation_id(self) -> None:
+        # Arrange
+        from structlog.contextvars import bind_contextvars, clear_contextvars
+
+        from zenith_ops.core.sentry_config import _enrich_event_with_correlation_id
+
+        bind_contextvars(correlation_id="request-456")
+        event: dict[str, object] = {"tags": {"component": "api"}}
+
+        try:
+            # Act
+            enriched = _enrich_event_with_correlation_id(event, {})
+
+            # Assert
+            assert enriched is event
+            tags = enriched.get("tags")
+            assert isinstance(tags, dict)
+            assert tags == {
+                "component": "api",
+                "correlation_id": "request-456",
+            }
+        finally:
+            clear_contextvars()
+
     def test_leaves_event_unchanged_without_correlation_id(self) -> None:
         # Arrange
         from zenith_ops.core.sentry_config import _enrich_event_with_correlation_id
