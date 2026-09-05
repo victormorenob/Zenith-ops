@@ -12,10 +12,12 @@ Tests cover:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import structlog
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -79,6 +81,9 @@ def _make_entry_dict(
         "input_schema": None,
         "output_schema": None,
     }
+
+
+UUID_V4_REGEX = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
 
 # ── GET /v1/models ──────────────────────────────────────────────────────
@@ -232,6 +237,7 @@ class TestRegisterModelEndpoint:
 
     def test_duplicate_returns_409(self) -> None:
         """Duplicate (name, version) returns 409 with duplicate_model error."""
+        # Arrange
         reg = _mock_registry()
         reg.register_and_build_model = AsyncMock(  # type: ignore[misc]
             side_effect=DuplicateModelError("dup-model", "1.0.0")
@@ -239,18 +245,37 @@ class TestRegisterModelEndpoint:
         app.dependency_overrides[get_registry] = lambda: reg
 
         client = TestClient(app)
-        response = client.post(
-            "/v1/models/register",
-            json={
-                "name": "dup-model",
-                "version": "1.0.0",
-                "framework": "sklearn",
-                "model_type": "dummy_iris",
-            },
-        )
+
+        # Act
+        with structlog.testing.capture_logs() as captured_logs:
+            response = client.post(
+                "/v1/models/register",
+                json={
+                    "name": "dup-model",
+                    "version": "1.0.0",
+                    "framework": "sklearn",
+                    "model_type": "dummy_iris",
+                },
+            )
+
+        # Assert
         assert response.status_code == status.HTTP_409_CONFLICT
         body = response.json()
         assert body["error"] == "duplicate_model"
+        assert "dup-model" in body["message"]
+
+        correlation_id = response.headers["X-Correlation-ID"]
+        assert re.match(UUID_V4_REGEX, correlation_id)
+
+        request_logs = [
+            event
+            for event in captured_logs
+            if event.get("event") == "request_completed"
+        ]
+        assert len(request_logs) == 1
+        assert request_logs[0]["status"] == status.HTTP_409_CONFLICT
+        assert request_logs[0]["log_level"] == "warning"
+        assert request_logs[0]["correlation_id"] == correlation_id
 
     def test_invalid_payload_returns_422(self) -> None:
         """Missing required fields returns 422."""
