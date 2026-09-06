@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import structlog
 
 from zenith_ops.core.settings import Settings
 
@@ -61,6 +62,36 @@ class TestConfigureSentry:
         assert result is False
         mock_init.assert_not_called()
 
+    def test_configure_sentry_logs_disabled_reason_when_dsn_empty(self) -> None:
+        # Arrange
+        from zenith_ops.core.sentry_config import configure_sentry
+
+        settings = Settings(
+            DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",  # type: ignore[arg-type]
+            SENTRY_DSN="",
+        )
+
+        # Act
+        with (
+            patch("zenith_ops.core.sentry_config.sentry_sdk.init") as mock_init,
+            structlog.testing.capture_logs() as captured_logs,
+        ):
+            result = configure_sentry(settings)
+
+        # Assert
+        assert result is False
+        mock_init.assert_not_called()
+        sentry_logs = [
+            event for event in captured_logs if event.get("event") == "sentry_disabled"
+        ]
+        assert sentry_logs == [
+            {
+                "event": "sentry_disabled",
+                "log_level": "info",
+                "reason": "SENTRY_DSN not set",
+            }
+        ]
+
     @patch("zenith_ops.core.sentry_config.sentry_sdk.init")
     def test_configure_sentry_calls_init_when_dsn_set(
         self, mock_init: MagicMock
@@ -87,6 +118,41 @@ class TestConfigureSentry:
         assert call_kwargs["traces_sample_rate"] == 0.25
         assert call_kwargs["send_default_pii"] is False
         assert len(call_kwargs["integrations"]) == 2
+
+    @patch("zenith_ops.core.sentry_config.sentry_sdk.init")
+    def test_configure_sentry_logs_initialized_metadata(
+        self, mock_init: MagicMock
+    ) -> None:
+        # Arrange
+        from zenith_ops.core.sentry_config import configure_sentry
+
+        settings = Settings(
+            DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",  # type: ignore[arg-type]
+            SENTRY_DSN="https://key@o0.ingest.sentry.io/1",
+            SENTRY_ENVIRONMENT="production",
+            SENTRY_TRACES_SAMPLE_RATE=0.5,
+        )
+
+        # Act
+        with structlog.testing.capture_logs() as captured_logs:
+            result = configure_sentry(settings)
+
+        # Assert
+        assert result is True
+        mock_init.assert_called_once()
+        sentry_logs = [
+            event
+            for event in captured_logs
+            if event.get("event") == "sentry_initialized"
+        ]
+        assert sentry_logs == [
+            {
+                "event": "sentry_initialized",
+                "log_level": "info",
+                "environment": "production",
+                "traces_sample_rate": 0.5,
+            }
+        ]
 
 
 class TestCaptureException:
