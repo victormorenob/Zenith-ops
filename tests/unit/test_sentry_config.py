@@ -1,5 +1,6 @@
 """Unit tests for Sentry configuration."""
 
+import importlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -43,6 +44,39 @@ class TestSettingsSentryEnabled:
 
 class TestConfigureSentry:
     """Tests for ``configure_sentry()`` — init is skipped or called per DSN."""
+
+    def test_app_startup_invokes_sentry_configuration(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange
+        import zenith_ops
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
+        monkeypatch.setenv("SENTRY_DSN", "https://startup@o0.ingest.sentry.io/1")
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
+        monkeypatch.setenv("SENTRY_TRACES_SAMPLE_RATE", "0.15")
+
+        try:
+            # Act
+            with (
+                patch("zenith_ops.core.logging_config.configure_logging"),
+                patch(
+                    "zenith_ops.core.sentry_config.configure_sentry",
+                ) as mock_configure_sentry,
+            ):
+                importlib.reload(zenith_ops)
+
+            # Assert
+            mock_configure_sentry.assert_called_once()
+            settings = mock_configure_sentry.call_args.args[0]
+            assert isinstance(settings, Settings)
+            assert settings.SENTRY_DSN == "https://startup@o0.ingest.sentry.io/1"
+            assert settings.SENTRY_ENVIRONMENT == "production"
+            assert settings.SENTRY_TRACES_SAMPLE_RATE == 0.15
+            assert settings.sentry_enabled is True
+        finally:
+            monkeypatch.setenv("SENTRY_DSN", "")
+            importlib.reload(zenith_ops)
 
     def test_configure_sentry_skips_init_when_dsn_empty(self) -> None:
         # Arrange
