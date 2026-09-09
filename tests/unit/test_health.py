@@ -8,6 +8,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -91,6 +92,30 @@ class TestLiveEndpoint:
 
 class TestCheckDatabase:
     """check_database() — async ping via SQLAlchemy."""
+
+    async def test_uses_default_settings_from_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default readiness checks should use DATABASE_URL from the environment."""
+        # Arrange
+        database_url = "postgresql+asyncpg://u:p@localhost:5432/defaultdb"
+        monkeypatch.setenv("DATABASE_URL", database_url)
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_conn = AsyncMock()
+        mock_engine.connect.return_value.__aenter__.return_value = mock_conn
+
+        # Act
+        with patch(
+            "zenith_ops.api.v1.health.create_async_engine", return_value=mock_engine
+        ) as mock_create_async_engine:
+            result = await check_database()
+
+        # Assert
+        assert result == "up"
+        mock_create_async_engine.assert_called_once_with(database_url)
+        mock_conn.execute.assert_awaited_once()
+        mock_engine.dispose.assert_awaited_once()
 
     async def test_returns_up_when_select_one_succeeds(self) -> None:
         """When SELECT 1 succeeds, should return 'up'."""
